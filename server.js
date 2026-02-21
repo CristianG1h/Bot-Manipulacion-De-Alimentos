@@ -14,8 +14,21 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "vip_verify_123";
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || "1065395483314461";
 const TOKEN = process.env.WHATSAPP_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
+
 let lastCleanupAt = 0;
 const CLEANUP_EVERY_MS = 30 * 60 * 1000; // 30 minutos
+
+// ====== Reintento inteligente (nudge) ======
+const NUDGE_AFTER_MIN = 10; // si no responde en 10 min
+const NUDGE_MAX = 2; // máximo 2 recordatorios
+const NUDGE_CHECK_EVERY_MS = 60 * 1000; // revisar cada 1 min
+const SESSION_EXPIRE_MIN = 60; // expira sesión tras 60 min sin responder (opcional)
+
+// ====== Anti-Spam / Rate limiting ======
+const RATE_MAX_PER_MIN = 8; // máximo mensajes por minuto por usuario
+const RATE_BLOCK_MIN = 5; // bloqueo temporal si excede rate
+const TEXT_MAX_LEN = 500; // longitud máxima de texto
+const rateState = new Map(); // wa_id -> { ts: number[], blockedUntil: number }
 
 if (!TOKEN) {
   console.warn("⚠️ Falta WHATSAPP_TOKEN. El bot recibirá webhooks pero NO podrá enviar mensajes.");
@@ -25,14 +38,18 @@ if (!DATABASE_URL) {
   console.warn("⚠️ Falta DATABASE_URL. El bot NO podrá guardar registros/sesiones en PostgreSQL.");
 }
 
-// ====== POSTGRES (Render) ======
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  // Render Postgres usa SSL en la mayoría de casos:
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-});
+// ====== POSTGRES ======
+let pool = null;
+
+if (DATABASE_URL) {
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  });
+}
 
 async function dbQuery(text, params = []) {
+  if (!pool) throw new Error("DB not configured");
   const client = await pool.connect();
   try {
     return await client.query(text, params);
@@ -58,6 +75,9 @@ async function initDb() {
     );
   `);
 
+  // Índice único para evitar cédulas duplicadas entre diferentes wa_id
+  await dbQuery(`CREATE UNIQUE INDEX IF NOT EXISTS ux_registrations_cedula ON registrations (cedula);`);
+
   // Tabla sessions: 1 sesión por wa_id
   await dbQuery(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -71,11 +91,24 @@ async function initDb() {
     );
   `);
 
-    await dbQuery(`
+  // Columnas para reintento inteligente (si no existen)
+  await dbQuery(`
+    ALTER TABLE sessions
+    ADD COLUMN IF NOT EXISTS last_inbound_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS last_nudge_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS nudge_count INT NOT NULL DEFAULT 0;
+  `);
+
+  await dbQuery(`
     CREATE TABLE IF NOT EXISTS processed_messages (
       message_id TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await dbQuery(`
+    CREATE INDEX IF NOT EXISTS idx_processed_messages_created_at
+    ON processed_messages (created_at);
   `);
 
   console.log("✅ PostgreSQL listo (tablas verificadas/creadas).");
@@ -108,25 +141,38 @@ app.post("/webhook", (req, res) => {
 
       // Ignorar estados
       const msg = value?.messages?.[0];
-if (!msg) return;
+      if (!msg) return;
 
-const messageId = msg.id;
-if (messageId) {
-  const already = await isProcessedMessage(messageId);
-  if (already) {
-    console.log("⏭️ Mensaje duplicado ignorado:", messageId);
-    return;
-  }
-  await markMessageProcessed(messageId);
-}
+      const from = msg.from;
 
-const now = Date.now();
-if (now - lastCleanupAt > CLEANUP_EVERY_MS) {
-  lastCleanupAt = now;
-  cleanupProcessedMessages().catch((e) => console.error("❌ Cleanup error:", e));
-}
-      
-const from = msg.from;
+      // ====== Rate limiting antes de procesar ======
+      const rl = isRateLimited(from);
+      if (rl.limited) {
+        if (TOKEN && rl.reason === "too_many") {
+          await sendText(from, "⚠️ Estás enviando muchos mensajes muy rápido. Intenta de nuevo en unos minutos.");
+        }
+        return;
+      }
+
+      // ====== Deduplicación de mensajes (si hay DB) ======
+      const messageId = msg.id;
+      if (messageId && DATABASE_URL) {
+        const already = await isProcessedMessage(messageId);
+        if (already) {
+          console.log("⏭️ Mensaje duplicado ignorado:", messageId);
+          return;
+        }
+        await markMessageProcessed(messageId);
+
+        const now = Date.now();
+        if (now - lastCleanupAt > CLEANUP_EVERY_MS) {
+          lastCleanupAt = now;
+          cleanupProcessedMessages().catch((e) => console.error("❌ Cleanup error:", e));
+        }
+      }
+
+      // Actualiza last_inbound_at si tiene sesión
+      await touchSessionInbound(from);
 
       // Si es botón
       const buttonId = msg?.interactive?.button_reply?.id;
@@ -145,11 +191,48 @@ const from = msg.from;
               "Con gusto te ayudaremos."
           );
 
+        // Reintento inteligente: continuar / cancelar
+        if (buttonId === "continue_reg") {
+          const session = await getSession(from);
+          if (!session) return await startRegistration(from);
+          return await resendStepPrompt(from, session.step);
+        }
+
+        if (buttonId === "cancel_reg") {
+          await deleteSession(from);
+          await sendText(from, "✅ Listo. Cancelamos el registro. Si deseas empezar de nuevo presiona *📋 Registrarme*.");
+          return await sendMainMenu(from);
+        }
+
         return await sendMainMenu(from);
       }
 
       // Texto normal
       const text = (msg.text?.body || "").trim();
+
+      if (text && text.length > TEXT_MAX_LEN) {
+        await sendText(from, `⚠️ El mensaje es muy largo. Envíalo en menos de ${TEXT_MAX_LEN} caracteres.`);
+        return;
+      }
+
+      // Comandos por texto (por si no usan botones)
+      const t = text.toLowerCase();
+      if (t === "menu" || t === "menú") return await sendMainMenu(from);
+      if (t === "registrarme" || t === "registro") return await startRegistration(from);
+      if (t === "enlace" || t === "link") return await sendCourseInfo(from);
+      if (t === "ayuda" || t === "asesor") {
+        return await sendText(
+          from,
+          "📞 *Atención personalizada*\n\n" +
+            "Para hablar con un asesor, comunícate directamente al:\n\n" +
+            "📱 *313 401 0901*"
+        );
+      }
+      if (t === "cancelar" || t === "cancel") {
+        await deleteSession(from);
+        await sendText(from, "✅ Proceso cancelado. Si deseas iniciar de nuevo presiona *📋 Registrarme*.");
+        return await sendMainMenu(from);
+      }
 
       // Si está en sesión de registro, procesar el paso
       const session = await getSession(from);
@@ -165,12 +248,47 @@ const from = msg.from;
   })();
 });
 
-// ====== DB HELPERS (POSTGRES) ======
+// ====== Rate limiting helpers ======
+function isRateLimited(wa_id) {
+  const now = Date.now();
+  const s = rateState.get(wa_id) || { ts: [], blockedUntil: 0 };
+
+  if (s.blockedUntil && now < s.blockedUntil) {
+    rateState.set(wa_id, s);
+    return { limited: true, reason: "blocked" };
+  }
+
+  // limpia timestamps > 60s
+  s.ts = s.ts.filter((t) => now - t < 60_000);
+  s.ts.push(now);
+
+  if (s.ts.length > RATE_MAX_PER_MIN) {
+    s.blockedUntil = now + RATE_BLOCK_MIN * 60_000;
+    rateState.set(wa_id, s);
+    return { limited: true, reason: "too_many" };
+  }
+
+  rateState.set(wa_id, s);
+  return { limited: false };
+}
+
+// ====== DB HELPERS ======
 async function getSession(wa_id) {
   if (!DATABASE_URL) return null;
-
   const r = await dbQuery(`SELECT * FROM sessions WHERE wa_id = $1`, [wa_id]);
   return r.rows[0] || null;
+}
+
+async function touchSessionInbound(wa_id) {
+  if (!DATABASE_URL) return;
+  await dbQuery(
+    `
+    UPDATE sessions
+    SET last_inbound_at = NOW(), updated_at = NOW()
+    WHERE wa_id = $1
+  `,
+    [wa_id]
+  );
 }
 
 async function upsertSessionReset(wa_id) {
@@ -178,8 +296,11 @@ async function upsertSessionReset(wa_id) {
 
   await dbQuery(
     `
-    INSERT INTO sessions (wa_id, step, temp_full_name, temp_cedula, temp_celular, temp_correo, updated_at)
-    VALUES ($1, 'FULL_NAME', NULL, NULL, NULL, NULL, NOW())
+    INSERT INTO sessions (
+      wa_id, step, temp_full_name, temp_cedula, temp_celular, temp_correo,
+      updated_at, last_inbound_at, last_nudge_at, nudge_count
+    )
+    VALUES ($1, 'FULL_NAME', NULL, NULL, NULL, NULL, NOW(), NOW(), NULL, 0)
     ON CONFLICT (wa_id)
     DO UPDATE SET
       step = 'FULL_NAME',
@@ -187,19 +308,23 @@ async function upsertSessionReset(wa_id) {
       temp_cedula = NULL,
       temp_celular = NULL,
       temp_correo = NULL,
-      updated_at = NOW();
+      updated_at = NOW(),
+      last_inbound_at = NOW(),
+      last_nudge_at = NULL,
+      nudge_count = 0;
     `,
     [wa_id]
   );
 }
 
 async function isProcessedMessage(message_id) {
+  if (!DATABASE_URL) return false;
   const r = await dbQuery(`SELECT 1 FROM processed_messages WHERE message_id = $1`, [message_id]);
   return r.rows.length > 0;
 }
 
 async function markMessageProcessed(message_id) {
-  // ON CONFLICT evita error si llega duplicado exacto
+  if (!DATABASE_URL) return;
   await dbQuery(
     `INSERT INTO processed_messages (message_id) VALUES ($1)
      ON CONFLICT (message_id) DO NOTHING`,
@@ -208,7 +333,7 @@ async function markMessageProcessed(message_id) {
 }
 
 async function cleanupProcessedMessages() {
-  // Borra IDs con más de 24 horas
+  if (!DATABASE_URL) return;
   await dbQuery(`
     DELETE FROM processed_messages
     WHERE created_at < NOW() - INTERVAL '24 hours';
@@ -218,7 +343,6 @@ async function cleanupProcessedMessages() {
 async function updateSession(wa_id, fields) {
   if (!DATABASE_URL) return;
 
-  // fields: { temp_full_name, temp_cedula, temp_celular, temp_correo, step }
   const allowed = ["temp_full_name", "temp_cedula", "temp_celular", "temp_correo", "step"];
   const keys = Object.keys(fields).filter((k) => allowed.includes(k));
 
@@ -263,6 +387,20 @@ async function upsertRegistration(wa_id, full_name, cedula, celular, correo) {
   );
 }
 
+// ====== Validaciones pro ======
+function isValidEmail(email) {
+  const e = (email || "").trim().toLowerCase();
+  if (e.length > 254) return false;
+  return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(e);
+}
+
+function normalizeCOCell(input) {
+  const digits = (input || "").replace(/\D/g, "");
+  const d = digits.startsWith("57") ? digits.slice(2) : digits;
+  if (!/^3\d{9}$/.test(d)) return null;
+  return { national: d, e164: `+57${d}` };
+}
+
 // ====== MENÚ PRINCIPAL ======
 async function sendMainMenu(to) {
   if (!TOKEN) return;
@@ -297,10 +435,7 @@ async function sendMainMenu(to) {
 // ====== REGISTRO: INICIO ======
 async function startRegistration(wa_id) {
   if (!DATABASE_URL) {
-    await sendText(
-      wa_id,
-      "⚠️ En este momento el sistema de registro está en mantenimiento. Escríbenos y te ayudamos."
-    );
+    await sendText(wa_id, "⚠️ En este momento el sistema de registro está en mantenimiento. Escríbenos y te ayudamos.");
     return;
   }
 
@@ -312,13 +447,20 @@ async function startRegistration(wa_id) {
   );
 }
 
+async function resendStepPrompt(wa_id, step) {
+  if (step === "FULL_NAME") return sendText(wa_id, "📝 Escribe tu *Nombre y Apellido completo*.");
+  if (step === "CEDULA") return sendText(wa_id, "Escribe tu *número de cédula* (solo números).");
+  if (step === "CELULAR") return sendText(wa_id, "Escribe tu *celular* (10 dígitos, ej: 3001234567).");
+  if (step === "CORREO") return sendText(wa_id, "Escribe tu *correo electrónico*.");
+  return startRegistration(wa_id);
+}
+
 // ====== REGISTRO: MANEJO DE PASOS ======
 async function handleRegistrationStep(wa_id, step, text) {
   if (!DATABASE_URL) return;
 
-  // Validaciones básicas (simples)
   if (step === "FULL_NAME") {
-    if (text.length < 5) {
+    if ((text || "").length < 5) {
       return await sendText(wa_id, "Por favor escribe tu *nombre completo* (Nombre y Apellido).");
     }
     await updateSession(wa_id, { temp_full_name: text, step: "CEDULA" });
@@ -326,27 +468,37 @@ async function handleRegistrationStep(wa_id, step, text) {
   }
 
   if (step === "CEDULA") {
-    const ced = text.replace(/\D/g, "");
+    const ced = (text || "").replace(/\D/g, "");
     if (ced.length < 5) {
       return await sendText(wa_id, "La cédula debe tener solo números. Escríbela nuevamente, por favor.");
     }
+
+    // Validar duplicado de cédula (si ya existe con otro wa_id)
+    const exists = await dbQuery(`SELECT wa_id FROM registrations WHERE cedula = $1`, [ced]);
+    if (exists.rows.length > 0 && exists.rows[0].wa_id !== wa_id) {
+      await deleteSession(wa_id);
+      return await sendText(
+        wa_id,
+        "⚠️ Esta cédula ya aparece registrada en nuestro sistema.\n\nSi necesitas actualizar tus datos, escribe *Ayuda*."
+      );
+    }
+
     await updateSession(wa_id, { temp_cedula: ced, step: "CELULAR" });
-    return await sendText(wa_id, "Gracias ✅ Ahora escribe tu *número de celular* (ej: 3XXXXXXXXX).");
+    return await sendText(wa_id, "Gracias ✅ Ahora escribe tu *número de celular* (ej: 3001234567).");
   }
 
   if (step === "CELULAR") {
-    const cel = text.replace(/\D/g, "");
-    if (cel.length < 10) {
-      return await sendText(wa_id, "Escríbeme el celular en formato de 10 dígitos (ej: 3001234567).");
+    const norm = normalizeCOCell(text);
+    if (!norm) {
+      return await sendText(wa_id, "Celular inválido. Debe ser móvil colombiano (10 dígitos y empezar por 3). Ej: 3001234567");
     }
-    await updateSession(wa_id, { temp_celular: cel, step: "CORREO" });
+    await updateSession(wa_id, { temp_celular: norm.e164, step: "CORREO" });
     return await sendText(wa_id, "Excelente ✅ Por último, escribe tu *correo electrónico*.");
   }
 
   if (step === "CORREO") {
-    const correo = text.trim().toLowerCase();
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
-    if (!emailOk) {
+    const correo = (text || "").trim().toLowerCase();
+    if (!isValidEmail(correo)) {
       return await sendText(wa_id, "Ese correo no parece válido. Escríbelo nuevamente, por favor.");
     }
 
@@ -356,13 +508,8 @@ async function handleRegistrationStep(wa_id, step, text) {
       return;
     }
 
-    await upsertRegistration(
-      wa_id,
-      session.temp_full_name,
-      session.temp_cedula,
-      session.temp_celular,
-      correo
-    );
+    // Guardar
+    await upsertRegistration(wa_id, session.temp_full_name, session.temp_cedula, session.temp_celular, correo);
 
     await deleteSession(wa_id);
 
@@ -374,7 +521,6 @@ async function handleRegistrationStep(wa_id, step, text) {
     return await sendMainMenu(wa_id);
   }
 
-  // Paso desconocido => reiniciar
   await deleteSession(wa_id);
   return await sendText(wa_id, "Se reinició el proceso. Por favor presiona *📋 Registrarme* nuevamente.");
 }
@@ -397,6 +543,66 @@ async function sendCourseInfo(to) {
     "Quedamos atentos.";
 
   await sendText(to, msg);
+}
+
+// ====== Reintento inteligente (job) ======
+async function nudgeAbandonedSessions() {
+  if (!DATABASE_URL || !TOKEN) return;
+
+  const r = await dbQuery(
+    `
+    SELECT wa_id, step, nudge_count, last_inbound_at, last_nudge_at
+    FROM sessions
+    WHERE
+      nudge_count < $1
+      AND last_inbound_at < NOW() - ($2 || ' minutes')::interval
+      AND (last_nudge_at IS NULL OR last_nudge_at < NOW() - ($2 || ' minutes')::interval)
+  `,
+    [NUDGE_MAX, String(NUDGE_AFTER_MIN)]
+  );
+
+  for (const s of r.rows) {
+    await sendContinuePrompt(s.wa_id);
+    await dbQuery(
+      `
+      UPDATE sessions
+      SET nudge_count = nudge_count + 1, last_nudge_at = NOW()
+      WHERE wa_id = $1
+    `,
+      [s.wa_id]
+    );
+  }
+
+  // expirar sesiones muy viejas
+  await dbQuery(
+    `
+    DELETE FROM sessions
+    WHERE last_inbound_at < NOW() - ($1 || ' minutes')::interval
+  `,
+    [String(SESSION_EXPIRE_MIN)]
+  );
+}
+
+async function sendContinuePrompt(to) {
+  const bodyText = "⏳ Notamos que no terminaste tu registro.\n\n¿Deseas continuar ahora?";
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: bodyText },
+      action: {
+        buttons: [
+          { type: "reply", reply: { id: "continue_reg", title: "✅ Continuar" } },
+          { type: "reply", reply: { id: "cancel_reg", title: "❌ Cancelar" } },
+        ],
+      },
+    },
+  };
+
+  await sendPayload(payload);
 }
 
 // ====== ENVIAR TEXTO ======
@@ -433,7 +639,7 @@ async function sendPayload(payload) {
   }
 }
 
-// ====== HEALTHCHECK (opcional pero útil) ======
+// ====== HEALTHCHECK ======
 app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
@@ -442,10 +648,14 @@ app.get("/", (req, res) => {
 (async () => {
   await initDb();
 
+  // Job de nudges cada minuto (si hay DB y TOKEN)
+  if (DATABASE_URL && TOKEN) {
+    setInterval(() => nudgeAbandonedSessions().catch((e) => console.error("❌ Nudge error:", e)), NUDGE_CHECK_EVERY_MS);
+  }
+
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log(`✅ Servidor activo en puerto ${PORT}. Webhook: /webhook`);
   });
-
 })();
 
