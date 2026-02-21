@@ -14,6 +14,8 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "vip_verify_123";
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID || "1065395483314461";
 const TOKEN = process.env.WHATSAPP_TOKEN;
 const DATABASE_URL = process.env.DATABASE_URL;
+let lastCleanupAt = 0;
+const CLEANUP_EVERY_MS = 30 * 60 * 1000; // 30 minutos
 
 if (!TOKEN) {
   console.warn("⚠️ Falta WHATSAPP_TOKEN. El bot recibirá webhooks pero NO podrá enviar mensajes.");
@@ -118,6 +120,12 @@ if (messageId) {
   await markMessageProcessed(messageId);
 }
 
+const now = Date.now();
+if (now - lastCleanupAt > CLEANUP_EVERY_MS) {
+  lastCleanupAt = now;
+  cleanupProcessedMessages().catch((e) => console.error("❌ Cleanup error:", e));
+}
+      
 const from = msg.from;
 
       // Si es botón
@@ -197,6 +205,14 @@ async function markMessageProcessed(message_id) {
      ON CONFLICT (message_id) DO NOTHING`,
     [message_id]
   );
+}
+
+async function cleanupProcessedMessages() {
+  // Borra IDs con más de 24 horas
+  await dbQuery(`
+    DELETE FROM processed_messages
+    WHERE created_at < NOW() - INTERVAL '24 hours';
+  `);
 }
 
 async function updateSession(wa_id, fields) {
@@ -432,3 +448,4 @@ app.get("/", (req, res) => {
   });
 
 })();
+
