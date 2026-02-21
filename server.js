@@ -69,6 +69,13 @@ async function initDb() {
     );
   `);
 
+    await dbQuery(`
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      message_id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   console.log("✅ PostgreSQL listo (tablas verificadas/creadas).");
 }
 
@@ -98,12 +105,20 @@ app.post("/webhook", (req, res) => {
       const value = change?.value;
 
       // Ignorar estados
-      if (value?.statuses) return;
-
       const msg = value?.messages?.[0];
-      if (!msg) return;
+if (!msg) return;
 
-      const from = msg.from;
+const messageId = msg.id;
+if (messageId) {
+  const already = await isProcessedMessage(messageId);
+  if (already) {
+    console.log("⏭️ Mensaje duplicado ignorado:", messageId);
+    return;
+  }
+  await markMessageProcessed(messageId);
+}
+
+const from = msg.from;
 
       // Si es botón
       const buttonId = msg?.interactive?.button_reply?.id;
@@ -167,6 +182,20 @@ async function upsertSessionReset(wa_id) {
       updated_at = NOW();
     `,
     [wa_id]
+  );
+}
+
+async function isProcessedMessage(message_id) {
+  const r = await dbQuery(`SELECT 1 FROM processed_messages WHERE message_id = $1`, [message_id]);
+  return r.rows.length > 0;
+}
+
+async function markMessageProcessed(message_id) {
+  // ON CONFLICT evita error si llega duplicado exacto
+  await dbQuery(
+    `INSERT INTO processed_messages (message_id) VALUES ($1)
+     ON CONFLICT (message_id) DO NOTHING`,
+    [message_id]
   );
 }
 
@@ -401,4 +430,5 @@ app.get("/", (req, res) => {
   app.listen(PORT, () => {
     console.log(`✅ Servidor activo en puerto ${PORT}. Webhook: /webhook`);
   });
+
 })();
