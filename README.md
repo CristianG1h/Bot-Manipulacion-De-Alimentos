@@ -19,6 +19,9 @@ El bot permite:
   <li>Envío de instructivo y enlace del curso</li>
   <li>Limpieza automática de eventos antiguos</li>
   <li>Despliegue en producción con Render</li>
+  <li><strong>Reintento inteligente</strong> si el usuario abandona el registro (recordatorio automático tras inactividad)</li>
+  <li><strong>Rate limiting / Anti-spam</strong> con bloqueo temporal por exceso de mensajes</li>
+  <li><strong>Validaciones profesionales y normalización de datos</strong> (+57, correo válido y cédula sin duplicados)</li>
   <li>Este sistema elimina la gestión manual y garantiza trazabilidad de los registros.</li>
 </ol>
 <p></p>
@@ -52,6 +55,7 @@ flowchart TD
   <li>WhatsApp Cloud API (Meta)</li>
   <li>GitHub (Control de versiones)</li>
   <li>Protección contra duplicados</li>
+  <li>Control anti-spam y limitación de tráfico</li>
 </ul>
 <p></p>
 <div align="center">
@@ -79,8 +83,8 @@ El proyecto requiere las siguientes variables:
     <ul>
       <li>Nombre completo</li>
       <li>Cédula</li>
-      <li>Celular</li>
-      <li>Correo electrónico</li>
+      <li>Celular (validación colombiana y normalización +57)</li>
+      <li>Correo electrónico (validación robusta)</li>
       <li>La sesión se almacena temporalmente en la tabla <code>sessions</code>.</li>
     </ul>
   </li>
@@ -89,7 +93,7 @@ El proyecto requiere las siguientes variables:
     <strong>Persistencia en PostgreSQL</strong><br>
     Tablas principales:
     <ul>
-      <li><code>registrations</code> – Guarda el registro definitivo del usuario.</li>
+      <li><code>registrations</code> – Guarda el registro definitivo del usuario (cédula con índice único).</li>
       <li><code>sessions</code> – Controla el flujo conversacional.</li>
       <li><code>processed_messages</code> – Evita procesamiento duplicado de eventos Webhook.</li>
     </ul>
@@ -100,6 +104,27 @@ El proyecto requiere las siguientes variables:
   <li><strong>Manejo de sesiones por pasos</strong></li>
 
   <li><strong>Prevención de mensajes duplicados (Webhook retry protection)</strong></li>
+
+  <li>
+    <strong>Reintento inteligente (abandono de registro)</strong><br>
+    Si el usuario no responde durante un período definido:
+    <ul>
+      <li>Se envía recordatorio automático.</li>
+      <li>Incluye botones: Continuar / Cancelar.</li>
+      <li>Máximo de intentos controlado por sesión.</li>
+      <li>Expiración automática de sesiones inactivas.</li>
+    </ul>
+  </li>
+
+  <li>
+    <strong>Rate limiting / Anti-spam</strong><br>
+    Protección ante abuso o flood:
+    <ul>
+      <li>Límite de mensajes por minuto por usuario.</li>
+      <li>Bloqueo temporal automático si excede el límite.</li>
+      <li>Validación de longitud máxima de texto.</li>
+    </ul>
+  </li>
 
   <li>
     <strong>Limpieza automática de eventos antiguos</strong><br>
@@ -121,8 +146,10 @@ El proyecto requiere las siguientes variables:
   <li>El bot muestra menú interactivo.</li>
   <li>El usuario selecciona "Registrarme".</li>
   <li>Se inicia flujo de captura de datos.</li>
+  <li>Se validan y normalizan los datos.</li>
   <li>Se guarda información en la base de datos.</li>
   <li>Se envía instructivo y enlace del curso.</li>
+  <li>Si abandona el proceso, se activa recordatorio automático.</li>
 </ol>
 <div align="center">
 <h2>🛡️ Seguridad</h2>
@@ -132,6 +159,8 @@ El proyecto requiere las siguientes variables:
   <li>Conexión SSL a PostgreSQL.</li>
   <li>Validación de Webhook mediante <code>VERIFY_TOKEN</code>.</li>
   <li>Prevención de eventos duplicados.</li>
+  <li>Protección anti-spam integrada.</li>
+  <li>Normalización y validación estricta de datos.</li>
 </ol>
 <div align="center">
 <h2>🔮 Mejoras Futuras</h2>
@@ -156,6 +185,10 @@ El proyecto requiere las siguientes variables:
 <p></p>
 🟢 Protección contra duplicados
 <p></p>
+🟢 Sistema de recuperación automática de registros
+<p></p>
+🟢 Control anti-spam activo
+<p></p>
 <div align="center">
 <h2>👨‍💻 Autor</h2>
 <p></p>
@@ -166,4 +199,3 @@ Ingeniero en Sistemas
 Bogotá – Colombia
 </div>
 <p></p>
-
