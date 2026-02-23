@@ -204,6 +204,36 @@ app.post("/webhook", (req, res) => {
           return await sendMainMenu(from);
         }
 
+        // ====== Confirmación final ======
+        if (buttonId === "confirm_reg") {
+          return await finalizeRegistration(from);
+        }
+
+        if (buttonId === "edit_reg") {
+          return await sendEditMenu(from);
+        }
+
+        // ====== Edición / corrección ======
+        if (buttonId === "edit_name") {
+          await updateSession(from, { step: "FULL_NAME" });
+          return await sendText(from, "✏️ Escribe nuevamente tu *Nombre y Apellido completo*.");
+        }
+        if (buttonId === "edit_cedula") {
+          await updateSession(from, { step: "CEDULA" });
+          return await sendText(from, "✏️ Escribe nuevamente tu *número de cédula* (solo números).");
+        }
+        if (buttonId === "edit_cell") {
+          await updateSession(from, { step: "CELULAR" });
+          return await sendText(from, "✏️ Escribe nuevamente tu *celular* (10 dígitos, ej: 3001234567).");
+        }
+        if (buttonId === "edit_email") {
+          await updateSession(from, { step: "CORREO" });
+          return await sendText(from, "✏️ Escribe nuevamente tu *correo electrónico*.");
+        }
+        if (buttonId === "back_menu") {
+          return await sendMainMenu(from);
+        }
+
         return await sendMainMenu(from);
       }
 
@@ -220,6 +250,7 @@ app.post("/webhook", (req, res) => {
       if (t === "menu" || t === "menú") return await sendMainMenu(from);
       if (t === "registrarme" || t === "registro") return await startRegistration(from);
       if (t === "enlace" || t === "link") return await sendCourseInfo(from);
+
       if (t === "ayuda" || t === "asesor") {
         return await sendText(
           from,
@@ -228,10 +259,21 @@ app.post("/webhook", (req, res) => {
             "📱 *313 401 0901*"
         );
       }
+
       if (t === "cancelar" || t === "cancel") {
         await deleteSession(from);
         await sendText(from, "✅ Proceso cancelado. Si deseas iniciar de nuevo presiona *📋 Registrarme*.");
         return await sendMainMenu(from);
+      }
+
+      // Comandos para corrección (texto)
+      if (t === "corregir" || t === "editar" || t === "me equivoqué" || t === "me equivoque") {
+        const session = await getSession(from);
+        if (!session) {
+          await sendText(from, "No veo un registro en curso. Presiona *📋 Registrarme* para iniciar.");
+          return;
+        }
+        return await sendEditMenu(from);
       }
 
       // Si está en sesión de registro, procesar el paso
@@ -452,6 +494,7 @@ async function resendStepPrompt(wa_id, step) {
   if (step === "CEDULA") return sendText(wa_id, "Escribe tu *número de cédula* (solo números).");
   if (step === "CELULAR") return sendText(wa_id, "Escribe tu *celular* (10 dígitos, ej: 3001234567).");
   if (step === "CORREO") return sendText(wa_id, "Escribe tu *correo electrónico*.");
+  if (step === "CONFIRM") return sendConfirmPrompt(wa_id);
   return startRegistration(wa_id);
 }
 
@@ -490,7 +533,10 @@ async function handleRegistrationStep(wa_id, step, text) {
   if (step === "CELULAR") {
     const norm = normalizeCOCell(text);
     if (!norm) {
-      return await sendText(wa_id, "Celular inválido. Debe ser móvil colombiano (10 dígitos y empezar por 3). Ej: 3001234567");
+      return await sendText(
+        wa_id,
+        "Celular inválido. Debe ser móvil colombiano (10 dígitos y empezar por 3). Ej: 3001234567"
+      );
     }
     await updateSession(wa_id, { temp_celular: norm.e164, step: "CORREO" });
     return await sendText(wa_id, "Excelente ✅ Por último, escribe tu *correo electrónico*.");
@@ -502,27 +548,140 @@ async function handleRegistrationStep(wa_id, step, text) {
       return await sendText(wa_id, "Ese correo no parece válido. Escríbelo nuevamente, por favor.");
     }
 
-    const session = await getSession(wa_id);
-    if (!session) {
-      await sendText(wa_id, "Se reinició el proceso. Por favor presiona *📋 Registrarme* nuevamente.");
-      return;
-    }
+    await updateSession(wa_id, { temp_correo: correo, step: "CONFIRM" });
+    return await sendConfirmPrompt(wa_id);
+  }
 
-    // Guardar
-    await upsertRegistration(wa_id, session.temp_full_name, session.temp_cedula, session.temp_celular, correo);
-
-    await deleteSession(wa_id);
-
-    await sendText(
+  if (step === "CONFIRM") {
+    // Si escribe algo en confirmación, lo guiamos:
+    return await sendText(
       wa_id,
-      "✅ *Registro completado*\n\n¡Gracias! Tu información quedó registrada correctamente.\n\nAhora puedes ver el instructivo y el enlace del curso en el botón:\n🔗 *Instructivo y link*"
+      "Por favor confirma tu registro usando los botones:\n✅ Confirmar o ✏️ Corregir\n\nTambién puedes escribir: *corregir*"
     );
-
-    return await sendMainMenu(wa_id);
   }
 
   await deleteSession(wa_id);
   return await sendText(wa_id, "Se reinició el proceso. Por favor presiona *📋 Registrarme* nuevamente.");
+}
+
+// ====== Confirmación final ======
+async function sendConfirmPrompt(to) {
+  if (!DATABASE_URL) return;
+
+  const session = await getSession(to);
+  if (!session) {
+    return await sendText(to, "Se reinició el proceso. Por favor presiona *📋 Registrarme* nuevamente.");
+  }
+
+  const summary =
+    "✅ *Confirma tus datos*\n\n" +
+    `👤 Nombre: *${session.temp_full_name || "-"}*\n` +
+    `🪪 Cédula: *${session.temp_cedula || "-"}*\n` +
+    `📱 Celular: *${session.temp_celular || "-"}*\n` +
+    `📧 Correo: *${session.temp_correo || "-"}*\n\n` +
+    "Si todo está correcto, presiona *✅ Confirmar*.\n" +
+    "Si necesitas cambiar algo, presiona *✏️ Corregir*.";
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: summary },
+      action: {
+        buttons: [
+          { type: "reply", reply: { id: "confirm_reg", title: "✅ Confirmar" } },
+          { type: "reply", reply: { id: "edit_reg", title: "✏️ Corregir" } },
+        ],
+      },
+    },
+  };
+
+  await sendPayload(payload);
+}
+
+async function sendEditMenu(to) {
+  if (!TOKEN) return;
+
+  const bodyText =
+    "✏️ *¿Qué dato deseas corregir?*\n\n" +
+    "Selecciona una opción:";
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: bodyText },
+      action: {
+        buttons: [
+          { type: "reply", reply: { id: "edit_name", title: "👤 Nombre" } },
+          { type: "reply", reply: { id: "edit_cedula", title: "🪪 Cédula" } },
+          { type: "reply", reply: { id: "edit_cell", title: "📱 Celular" } },
+          { type: "reply", reply: { id: "edit_email", title: "📧 Correo" } },
+        ],
+      },
+    },
+  };
+
+  await sendPayload(payload);
+
+  // Nota: WhatsApp permite máx 3 botones por mensaje en muchos casos.
+  // Para evitar errores de API, enviamos un segundo mensaje con "Volver al menú".
+  const payload2 = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: "Opciones adicionales:" },
+      action: {
+        buttons: [{ type: "reply", reply: { id: "back_menu", title: "⬅️ Volver al menú" } }],
+      },
+    },
+  };
+
+  await sendPayload(payload2);
+}
+
+async function finalizeRegistration(wa_id) {
+  if (!DATABASE_URL) return;
+
+  const session = await getSession(wa_id);
+  if (!session) {
+    await sendText(wa_id, "Se reinició el proceso. Por favor presiona *📋 Registrarme* nuevamente.");
+    return;
+  }
+
+  // Validación final: que todo exista
+  if (!session.temp_full_name || !session.temp_cedula || !session.temp_celular || !session.temp_correo) {
+    await sendText(wa_id, "⚠️ Faltan datos por completar. Escribe *corregir* o presiona *📋 Registrarme*.");
+    return;
+  }
+
+  // Validar duplicado de cédula (por seguridad)
+  const exists = await dbQuery(`SELECT wa_id FROM registrations WHERE cedula = $1`, [session.temp_cedula]);
+  if (exists.rows.length > 0 && exists.rows[0].wa_id !== wa_id) {
+    await deleteSession(wa_id);
+    await sendText(
+      wa_id,
+      "⚠️ Esta cédula ya aparece registrada en nuestro sistema.\n\nSi necesitas actualizar tus datos, escribe *Ayuda*."
+    );
+    return;
+  }
+
+  await upsertRegistration(wa_id, session.temp_full_name, session.temp_cedula, session.temp_celular, session.temp_correo);
+
+  await deleteSession(wa_id);
+
+  await sendText(
+    wa_id,
+    "✅ *Registro completado*\n\n¡Gracias! Tu información quedó registrada correctamente.\n\nAhora puedes ver el instructivo y el enlace del curso en el botón:\n🔗 *Instructivo y link*"
+  );
+
+  return await sendMainMenu(wa_id);
 }
 
 // ====== INSTRUCTIVO + LINK ======
@@ -658,4 +817,3 @@ app.get("/", (req, res) => {
     console.log(`✅ Servidor activo en puerto ${PORT}. Webhook: /webhook`);
   });
 })();
-
