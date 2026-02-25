@@ -31,7 +31,7 @@ router.post("/access", requireApiKey, async (req, res) => {
     const waTo = norm.e164.replace("+", "");
 
     // AJUSTA al nombre exacto de tu plantilla aprobada y su idioma:
-    const TEMPLATE_NAME = "acceso_curso"; // o acceso_curso_v2 cuando esté ACTIVA
+    const TEMPLATE_NAME = "acceso_curso1"; // o acceso_curso_v2 cuando esté ACTIVA
     const LANG = "es_CO"; // si tu plantilla quedó en English sería en_US (según aparezca)
 
     if (!name || !user || !password) {
