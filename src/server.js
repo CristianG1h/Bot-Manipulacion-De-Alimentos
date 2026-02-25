@@ -6,6 +6,9 @@ const { initDb } = require("./db/init");
 const { DATABASE_URL, TOKEN, NUDGE_CHECK_EVERY_MS } = require("./config");
 const { nudgeAbandonedSessions } = require("./jobs/nudge");
 
+const notifyRouter = require("./routes/notify");
+app.use("/api/notify", notifyRouter);
+
 const app = express();
 app.use(express.json());
 
@@ -25,4 +28,5 @@ app.get("/", (req, res) => res.status(200).send("OK"));
 
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`✅ Servidor activo en puerto ${PORT}. Webhook: /webhook`));
+
 })();
