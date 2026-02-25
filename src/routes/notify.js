@@ -21,7 +21,7 @@ router.post("/access", requireApiKey, async (req, res) => {
 
     // Normaliza a +57...
     const norm =
-      (String(to).startsWith("57") || String(to).startsWith("+57"))
+      String(to).startsWith("57") || String(to).startsWith("+57")
         ? { e164: String(to).startsWith("+") ? String(to) : `+${String(to)}` }
         : normalizeCOCell(String(to));
 
@@ -30,16 +30,16 @@ router.post("/access", requireApiKey, async (req, res) => {
     // Cloud API requiere "to" sin "+"
     const waTo = norm.e164.replace("+", "");
 
-    // AJUSTA a tu plantilla real (nombre exacto):
-    const TEMPLATE_NAME = "acceso_curso";
-    const LANG = "es_CO";
+    // AJUSTA al nombre exacto de tu plantilla aprobada y su idioma:
+    const TEMPLATE_NAME = "acceso_curso"; // o acceso_curso_v2 cuando esté ACTIVA
+    const LANG = "es_CO"; // si tu plantilla quedó en English sería en_US (según aparezca)
 
-    // Validación mínima de variables (opcional pero recomendado)
     if (!name || !user || !password) {
       return res.status(400).json({ ok: false, error: "Missing name/user/password" });
     }
 
-          messaging_product: "whatsapp",
+    const payload = {
+      messaging_product: "whatsapp",
       to: waTo,
       type: "template",
       template: {
