@@ -39,15 +39,24 @@ router.post("/access", requireApiKey, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing name/user/password" });
     }
 
-    const payload = {
-  messaging_product: "whatsapp",
-  to: waTo,
-  type: "template",
-  template: {
-    name: TEMPLATE_NAME,
-    language: { code: LANG }
-  }
-};
+          messaging_product: "whatsapp",
+      to: waTo,
+      type: "template",
+      template: {
+        name: TEMPLATE_NAME,
+        language: { code: LANG },
+        components: [
+          {
+            type: "body",
+            parameters: [
+              { type: "text", text: String(name) },     // {{1}}
+              { type: "text", text: String(user) },     // {{2}}
+              { type: "text", text: String(password) }, // {{3}}
+            ],
+          },
+        ],
+      },
+    };
 
     await sendPayload(payload);
     return res.json({ ok: true });
