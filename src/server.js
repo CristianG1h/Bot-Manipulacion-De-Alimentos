@@ -5,6 +5,7 @@ const express = require("express");
 const webhookRouter = require("./routes/webhook");
 const notifyRouter = require("./routes/notify");
 const certificateRouter = require("./routes/certificate");
+const pullRouter = require("./routes/pull");
 
 const { initDb } = require("./db/init");
 const { DATABASE_URL, TOKEN, NUDGE_CHECK_EVERY_MS } = require("./config");
@@ -17,7 +18,7 @@ app.use(express.json());
 app.use("/webhook", webhookRouter);
 app.use("/notify", notifyRouter);              // POST /notify/access
 app.use("/notify/certificate", certificateRouter); // POST /notify/certificate
-
+app.use("/api", pullRouter);
 // Healthcheck
 app.get("/", (req, res) => res.status(200).send("OK"));
 
@@ -34,3 +35,4 @@ app.get("/", (req, res) => res.status(200).send("OK"));
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log(`✅ Servidor activo en puerto ${PORT}. Webhook: /webhook`));
 })();
+
