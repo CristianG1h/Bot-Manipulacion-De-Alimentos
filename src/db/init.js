@@ -32,7 +32,14 @@ async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
-
+  
+await dbQuery(`
+  ALTER TABLE registrations
+    ADD COLUMN IF NOT EXISTS page_user_created BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS page_user_created_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS page_user_id TEXT;
+`);
+  
   await dbQuery(`
     ALTER TABLE sessions
     ADD COLUMN IF NOT EXISTS last_inbound_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -54,5 +61,6 @@ async function initDb() {
 
   console.log("✅ PostgreSQL listo (tablas verificadas/creadas).");
 }
+
 
 module.exports = { initDb };
