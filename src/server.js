@@ -16,9 +16,17 @@ app.use(express.json());
 
 // Rutas
 app.use("/webhook", webhookRouter);
-app.use("/notify", notifyRouter);              // POST /notify/access
-app.use("/notify/certificate", certificateRouter); // POST /notify/certificate
+
+// ✅ Notificaciones (rutas equivalentes)
+app.use("/notify", notifyRouter);        // POST /notify/access
+app.use("/api/notify", notifyRouter);    // POST /api/notify/access  (ALIAS)
+
+// Certificados (ojo: queda como POST /notify/certificate/lo-que-definas-en-router)
+app.use("/notify/certificate", certificateRouter);
+
+// API (pull, etc.)
 app.use("/api", pullRouter);
+
 // Healthcheck
 app.get("/", (req, res) => res.status(200).send("OK"));
 
@@ -33,6 +41,7 @@ app.get("/", (req, res) => res.status(200).send("OK"));
   }
 
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`✅ Servidor activo en puerto ${PORT}. Webhook: /webhook`));
+  app.listen(PORT, () =>
+    console.log(`✅ Servidor activo en puerto ${PORT}. Webhook: /webhook`)
+  );
 })();
-
