@@ -107,6 +107,43 @@ async function cleanupProcessedMessages() {
   await dbQuery(`DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '24 hours';`);
 }
 
+async function getPendingRegistrations(limit = 50) {
+  if (!DATABASE_URL) return [];
+  const safeLimit = Math.min(Number(limit) || 50, 200);
+
+  const r = await dbQuery(
+    `
+    SELECT id, wa_id, full_name, cedula, celular, correo, created_at
+    FROM registrations
+    WHERE page_user_created = FALSE
+    ORDER BY created_at ASC
+    LIMIT $1
+    `,
+    [safeLimit]
+  );
+
+  return r.rows;
+}
+
+async function markRegistrationProcessed(id, page_user_id = null) {
+  if (!DATABASE_URL) return null;
+
+  const r = await dbQuery(
+    `
+    UPDATE registrations
+    SET page_user_created = TRUE,
+        page_user_created_at = NOW(),
+        page_user_id = COALESCE($2, page_user_id),
+        updated_at = NOW()
+    WHERE id = $1
+    RETURNING id, page_user_created, page_user_created_at, page_user_id
+    `,
+    [id, page_user_id]
+  );
+
+  return r.rows[0] || null;
+}
+
 module.exports = {
   getSession,
   touchSessionInbound,
@@ -118,4 +155,7 @@ module.exports = {
   isProcessedMessage,
   markMessageProcessed,
   cleanupProcessedMessages,
+  getPendingRegistrations,
+  markRegistrationProcessed,
+
 };
