@@ -201,7 +201,7 @@ async function sendCourseInfo(to) {
     "🎓 *Curso de Manipulación de Alimentos*\n\n" +
     "A continuación te compartimos el instructivo para iniciar tu capacitación:\n\n" +
     `1️⃣ Ingresa al siguiente enlace:\n${link}\n\n` +
-    "2️⃣ Usuario: tu correo electrónico\n" +
+    "2️⃣ Usuario: Cedula\n" +
     `🔐 Contraseña: ${password}\n\n` +
     "3️⃣ Una vez ingreses, haz clic en *INICIAR*.\n\n" +
     "4️⃣ Selecciona *Iniciar lección* y desarrolla toda la capacitación.\n\n" +
@@ -325,4 +325,5 @@ router.post("/", (req, res) => {
 
 
 module.exports = router;
+
 
