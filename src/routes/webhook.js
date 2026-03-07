@@ -194,8 +194,8 @@ async function finalizeRegistration(wa_id) {
 }
 
 async function sendCourseInfo(to) {
-  const link = "https://www.curso.com"; // CAMBIA por tu link real
-  const password = "curso234";
+  const link = "FABIAN ESTEBAN JOYA CARRERO"; // CAMBIA por tu link real
+  const password = "Hola123";
 
   const msg =
     "🎓 *Curso de Manipulación de Alimentos*\n\n" +
@@ -322,5 +322,6 @@ router.post("/", (req, res) => {
     }
   })();
 });
+
 
 module.exports = router;
