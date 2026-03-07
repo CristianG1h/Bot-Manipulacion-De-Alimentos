@@ -194,7 +194,7 @@ async function finalizeRegistration(wa_id) {
 }
 
 async function sendCourseInfo(to) {
-  const link = "FABIAN ESTEBAN JOYA CARRERO"; // CAMBIA por tu link real
+  const link = "https://vip-alimentos-703743967183.us-central1.run.app/login"; // CAMBIA por tu link real
   const password = "Hola123";
 
   const msg =
@@ -325,3 +325,4 @@ router.post("/", (req, res) => {
 
 
 module.exports = router;
+
