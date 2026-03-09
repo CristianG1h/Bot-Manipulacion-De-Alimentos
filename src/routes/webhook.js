@@ -12,6 +12,7 @@ const {
 const { isRateLimited } = require("../utils/rateLimit");
 const { isValidEmail, normalizeCOCell } = require("../utils/validation");
 const { sendText, sendMainMenu, sendPayload } = require("../services/whatsapp");
+const { sendToChatwoot } = require("../services/chatwoot");
 const {
   getSession,
   touchSessionInbound,
@@ -41,6 +42,28 @@ router.get("/", (req, res) => {
   }
   return res.sendStatus(403);
 });
+
+// ====== Helpers ======
+function getProfileName(value, from) {
+  const contact = value?.contacts?.find((c) => c.wa_id === from);
+  return contact?.profile?.name || from;
+}
+
+async function syncIncomingToChatwoot({ value, from, text }) {
+  try {
+    if (!text) return;
+
+    const profileName = getProfileName(value, from);
+
+    await sendToChatwoot({
+      phone: from,
+      name: profileName,
+      message: text,
+    });
+  } catch (err) {
+    console.error("❌ Error sincronizando con Chatwoot:", err.message);
+  }
+}
 
 // Helpers UI
 async function resendStepPrompt(wa_id, step) {
@@ -102,7 +125,6 @@ async function sendEditMenu(to) {
 
   await sendPayload(payload);
 
-  // 2do mensaje para email + back (por límite típico de botones)
   return sendPayload({
     messaging_product: "whatsapp",
     to,
@@ -186,15 +208,26 @@ async function finalizeRegistration(wa_id) {
     return sendText(wa_id, "⚠️ Esta cédula ya aparece registrada en nuestro sistema.\n\nSi necesitas actualizar tus datos, escribe *Ayuda*.");
   }
 
-  await upsertRegistration(wa_id, session.temp_full_name, session.temp_cedula, session.temp_celular, session.temp_correo);
+  await upsertRegistration(
+    wa_id,
+    session.temp_full_name,
+    session.temp_cedula,
+    session.temp_celular,
+    session.temp_correo
+  );
+
   await deleteSession(wa_id);
 
-  await sendText(wa_id, "✅ *Registro completado*\n\n¡Gracias! Tu información quedó registrada correctamente.\n\nAhora puedes ver el instructivo y el enlace del curso en el botón:\n🔗 *Instructivo y link*");
+  await sendText(
+    wa_id,
+    "✅ *Registro completado*\n\n¡Gracias! Tu información quedó registrada correctamente.\n\nAhora puedes ver el instructivo y el enlace del curso en el botón:\n🔗 *Instructivo y link*"
+  );
+
   return sendMainMenu(wa_id);
 }
 
 async function sendCourseInfo(to) {
-  const link = "https://vip-alimentos-703743967183.us-central1.run.app/login"; // CAMBIA por tu link real
+  const link = "https://vip-alimentos-703743967183.us-central1.run.app/login";
   const password = "Hola123";
 
   const msg =
@@ -230,7 +263,9 @@ router.post("/", (req, res) => {
       // Rate limit
       const rl = isRateLimited(from);
       if (rl.limited) {
-        if (TOKEN && rl.reason === "too_many") await sendText(from, "⚠️ Estás enviando muchos mensajes muy rápido. Intenta de nuevo en unos minutos.");
+        if (TOKEN && rl.reason === "too_many") {
+          await sendText(from, "⚠️ Estás enviando muchos mensajes muy rápido. Intenta de nuevo en unos minutos.");
+        }
         return;
       }
 
@@ -251,18 +286,20 @@ router.post("/", (req, res) => {
 
       await touchSessionInbound(from);
 
-      // Botón
+      // Botones interactivos
       const buttonId = msg?.interactive?.button_reply?.id;
       if (buttonId) {
         if (buttonId === "registrarme") return startRegistration(from);
         if (buttonId === "enlace") return sendCourseInfo(from);
+
         if (buttonId === "asesor") {
-          return sendText(from,
+          return sendText(
+            from,
             "📞 *Atención personalizada*\n\n" +
-            "Este canal funciona únicamente con sistema automático.\n\n" +
-            "Para hablar con un asesor, comunícate directamente al:\n\n" +
-            "📱 *313 401 0901*\n\n" +
-            "Con gusto te ayudaremos."
+              "Este canal funciona únicamente con sistema automático.\n\n" +
+              "Para hablar con un asesor, comunícate directamente al:\n\n" +
+              "📱 *313 401 0901*\n\n" +
+              "Con gusto te ayudaremos."
           );
         }
 
@@ -281,25 +318,52 @@ router.post("/", (req, res) => {
         if (buttonId === "confirm_reg") return finalizeRegistration(from);
         if (buttonId === "edit_reg") return sendEditMenu(from);
 
-        if (buttonId === "edit_name") { await updateSession(from, { step: "FULL_NAME" }); return sendText(from, "✏️ Escribe nuevamente tu *Nombre y Apellido completo*."); }
-        if (buttonId === "edit_cedula") { await updateSession(from, { step: "CEDULA" }); return sendText(from, "✏️ Escribe nuevamente tu *número de cédula* (solo números)."); }
-        if (buttonId === "edit_cell") { await updateSession(from, { step: "CELULAR" }); return sendText(from, "✏️ Escribe nuevamente tu *celular* (10 dígitos, ej: 3001234567)."); }
-        if (buttonId === "edit_email") { await updateSession(from, { step: "CORREO" }); return sendText(from, "✏️ Escribe nuevamente tu *correo electrónico*."); }
+        if (buttonId === "edit_name") {
+          await updateSession(from, { step: "FULL_NAME" });
+          return sendText(from, "✏️ Escribe nuevamente tu *Nombre y Apellido completo*.");
+        }
+
+        if (buttonId === "edit_cedula") {
+          await updateSession(from, { step: "CEDULA" });
+          return sendText(from, "✏️ Escribe nuevamente tu *número de cédula* (solo números).");
+        }
+
+        if (buttonId === "edit_cell") {
+          await updateSession(from, { step: "CELULAR" });
+          return sendText(from, "✏️ Escribe nuevamente tu *celular* (10 dígitos, ej: 3001234567).");
+        }
+
+        if (buttonId === "edit_email") {
+          await updateSession(from, { step: "CORREO" });
+          return sendText(from, "✏️ Escribe nuevamente tu *correo electrónico*.");
+        }
+
         if (buttonId === "back_menu") return sendMainMenu(from);
 
         return sendMainMenu(from);
       }
 
-      // Texto
+      // Solo texto
       const text = (msg.text?.body || "").trim();
-      if (text && text.length > TEXT_MAX_LEN) return sendText(from, `⚠️ El mensaje es muy largo. Envíalo en menos de ${TEXT_MAX_LEN} caracteres.`);
+
+      // Enviar a Chatwoot solo si es texto real
+      if (text) {
+        await syncIncomingToChatwoot({ value, from, text });
+      }
+
+      if (text && text.length > TEXT_MAX_LEN) {
+        return sendText(from, `⚠️ El mensaje es muy largo. Envíalo en menos de ${TEXT_MAX_LEN} caracteres.`);
+      }
 
       const t = text.toLowerCase();
+
       if (t === "menu" || t === "menú") return sendMainMenu(from);
       if (t === "registrarme" || t === "registro") return startRegistration(from);
       if (t === "enlace" || t === "link") return sendCourseInfo(from);
 
-      if (t === "ayuda" || t === "asesor") return sendText(from, "📞 *Atención personalizada*\n\nPara hablar con un asesor, comunícate directamente al:\n\n📱 *313 401 0901*");
+      if (t === "ayuda" || t === "asesor") {
+        return sendText(from, "📞 *Atención personalizada*\n\nPara hablar con un asesor, comunícate directamente al:\n\n📱 *313 401 0901*");
+      }
 
       if (t === "cancelar" || t === "cancel") {
         await deleteSession(from);
@@ -323,7 +387,7 @@ router.post("/", (req, res) => {
   })();
 });
 
-
 module.exports = router;
+
 
 
