@@ -3,30 +3,21 @@
 const CHATWOOT_URL = process.env.CHATWOOT_URL;
 const CHATWOOT_INBOX_IDENTIFIER = process.env.CHATWOOT_INBOX_IDENTIFIER;
 
-async function sendToChatwoot({ phone, name, message }) {
-  if (!CHATWOOT_URL || !CHATWOOT_INBOX_IDENTIFIER) {
-    console.log("ℹ️ Chatwoot no configurado. Se omite sincronización.");
-    return null;
-  }
+function getBaseUrl() {
+  if (!CHATWOOT_URL) throw new Error("CHATWOOT_URL no configurado");
+  return CHATWOOT_URL.replace(/\/+$/, "");
+}
 
-  const cleanBase = CHATWOOT_URL.replace(/\/+$/, "");
-  const url = `${cleanBase}/public/api/v1/inboxes/${CHATWOOT_INBOX_IDENTIFIER}/contacts`;
-
-  const payload = {
-    name: name || phone,
-    phone_number: phone,
-    identifier: phone,
-    message: {
-      content: message
-    }
-  };
+async function cwFetch(path, options = {}) {
+  const url = `${getBaseUrl()}${path}`;
 
   const res = await fetch(url, {
-    method: "POST",
+    method: options.method || "GET",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
     },
-    body: JSON.stringify(payload)
+    body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
   const raw = await res.text();
@@ -42,6 +33,69 @@ async function sendToChatwoot({ phone, name, message }) {
   }
 }
 
+async function createContact({ phone, name }) {
+  return cwFetch(`/public/api/v1/inboxes/${CHATWOOT_INBOX_IDENTIFIER}/contacts`, {
+    method: "POST",
+    body: {
+      name: name || phone,
+      identifier: phone,
+      phone_number: `+${phone.replace(/\D/g, "")}`,
+    },
+  });
+}
+
+async function createConversation(sourceId) {
+  return cwFetch(
+    `/public/api/v1/inboxes/${CHATWOOT_INBOX_IDENTIFIER}/contacts/${sourceId}/conversations`,
+    {
+      method: "POST",
+      body: {},
+    }
+  );
+}
+
+async function sendMessage(sourceId, conversationId, message) {
+  return cwFetch(
+    `/public/api/v1/inboxes/${CHATWOOT_INBOX_IDENTIFIER}/contacts/${sourceId}/conversations/${conversationId}/messages`,
+    {
+      method: "POST",
+      body: {
+        content: message,
+      },
+    }
+  );
+}
+
+async function sendToChatwoot({ phone, name, message }) {
+  if (!CHATWOOT_URL || !CHATWOOT_INBOX_IDENTIFIER) {
+    console.log("ℹ️ Chatwoot no configurado. Se omite sincronización.");
+    return null;
+  }
+
+  const contact = await createContact({ phone, name });
+
+  const sourceId =
+    contact?.source_id ||
+    contact?.id ||
+    contact?.contact_inbox?.source_id;
+
+  if (!sourceId) {
+    throw new Error(`No se pudo obtener source_id del contacto: ${JSON.stringify(contact)}`);
+  }
+
+  const conversation = await createConversation(sourceId);
+
+  const conversationId =
+    conversation?.id ||
+    conversation?.conversation_id;
+
+  if (!conversationId) {
+    throw new Error(`No se pudo obtener conversationId: ${JSON.stringify(conversation)}`);
+  }
+
+  return sendMessage(sourceId, conversationId, message);
+}
+
 module.exports = {
-  sendToChatwoot
+  sendToChatwoot,
 };
