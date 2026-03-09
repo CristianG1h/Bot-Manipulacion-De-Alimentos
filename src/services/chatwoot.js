@@ -1,29 +1,45 @@
 "use strict";
 
-const CHATWOOT_URL = "https://unconsidering-larissa-lashed.ngrok-free.dev/";
-const INBOX_IDENTIFIER = "2F4YzZ8mJxEECGiyUguC9xB1";
+const CHATWOOT_URL = process.env.CHATWOOT_URL;
+const CHATWOOT_INBOX_IDENTIFIER = process.env.CHATWOOT_INBOX_IDENTIFIER;
 
 async function sendToChatwoot({ phone, name, message }) {
+  if (!CHATWOOT_URL || !CHATWOOT_INBOX_IDENTIFIER) {
+    console.log("ℹ️ Chatwoot no configurado. Se omite sincronización.");
+    return null;
+  }
 
-  const response = await fetch(
-    `${CHATWOOT_URL}/public/api/v1/inboxes/${INBOX_IDENTIFIER}/contacts`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        name: name,
-        phone_number: phone,
-        message: {
-          content: message
-        }
-      })
+  const cleanBase = CHATWOOT_URL.replace(/\/+$/, "");
+  const url = `${cleanBase}/public/api/v1/inboxes/${CHATWOOT_INBOX_IDENTIFIER}/contacts`;
+
+  const payload = {
+    name: name || phone,
+    phone_number: phone,
+    identifier: phone,
+    message: {
+      content: message
     }
-  );
+  };
 
-  const data = await response.json();
-  return data;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const raw = await res.text();
+
+  if (!res.ok) {
+    throw new Error(`Chatwoot ${res.status}: ${raw}`);
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
 }
 
 module.exports = {
