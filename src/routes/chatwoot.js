@@ -1,71 +1,156 @@
-// src/routes/chatwoot.js
 "use strict";
 
 const express = require("express");
+const { isRateLimited } = require("../utils/rateLimit");
+
 const router = express.Router();
 
+function getTextFromMessage(body) {
+  return (body.content || "").trim();
+}
+
+function isIncomingUserMessage(body) {
+  return body.event === "message_created" &&
+    body.message_type === "incoming" &&
+    body.private !== true;
+}
+
+async function sendChatwootReply(conversationId, content) {
+  const baseUrl = (process.env.CHATWOOT_BASE_URL || "").replace(/\/+$/, "");
+  const accountId = process.env.CHATWOOT_ACCOUNT_ID;
+  const apiToken = process.env.CHATWOOT_API_TOKEN;
+
+  if (!baseUrl || !accountId || !apiToken) {
+    throw new Error("Faltan CHATWOOT_BASE_URL, CHATWOOT_ACCOUNT_ID o CHATWOOT_API_TOKEN");
+  }
+
+  const url = `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      api_access_token: apiToken,
+    },
+    body: JSON.stringify({
+      content,
+      message_type: "outgoing",
+      private: false,
+    }),
+  });
+
+  const raw = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Chatwoot API ${response.status}: ${raw}`);
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+async function buildReply(text) {
+  const t = text.toLowerCase();
+
+  if (t === "menu" || t === "menú") {
+    return (
+      "✨ *VIP Salud Ocupacional*\n\n" +
+      "Bienvenido(a) al *Curso de Manipulación de Alimentos*.\n\n" +
+      "Escribe una de estas opciones:\n" +
+      "• *curso*\n" +
+      "• *certificado*\n" +
+      "• *asesor*"
+    );
+  }
+
+  if (
+    t === "enlace" ||
+    t === "link" ||
+    t === "curso" ||
+    t === "instructivo" ||
+    t === "instructivo y link"
+  ) {
+    return (
+      "📘 *Curso de Manipulación de Alimentos*\n\n" +
+      "A continuación te compartimos el instructivo para iniciar tu capacitación:\n\n" +
+      "1️⃣ Ingresa al siguiente enlace:\n" +
+      "https://vip-alimentos-703743967183.us-central1.run.app/login\n\n" +
+      "2️⃣ Usuario: *Cédula*\n" +
+      "3️⃣ Contraseña: *Hola123*\n\n" +
+      "4️⃣ Una vez ingreses, haz clic en *INICIAR*.\n" +
+      "5️⃣ Selecciona *Iniciar lección* y desarrolla toda la capacitación.\n\n" +
+      "Si presentas alguna dificultad, escríbenos *asesor*."
+    );
+  }
+
+  if (
+    t === "ayuda" ||
+    t === "asesor" ||
+    t === "necesito ayuda"
+  ) {
+    return (
+      "👩‍💼 *Atención personalizada*\n\n" +
+      "Para hablar con un asesor, comunícate directamente al:\n\n" +
+      "*313 401 0901*\n\n" +
+      "Con gusto te ayudaremos."
+    );
+  }
+
+  if (t.includes("certificado")) {
+    return (
+      "📄 Para ayudarte con tu certificado, envíanos por favor tu *número de cédula*."
+    );
+  }
+
+  return (
+    "Hola 👋 Gracias por escribirnos.\n\n" +
+    "Puedes escribir:\n" +
+    "• *curso*\n" +
+    "• *certificado*\n" +
+    "• *asesor*\n" +
+    "• *menu*"
+  );
+}
+
 router.post("/webhook", async (req, res) => {
+  res.status(200).json({ ok: true });
+
   try {
     const body = req.body;
+    console.log("📩 CHATWOOT WEBHOOK:", JSON.stringify(body, null, 2));
 
-    console.log("CHATWOOT WEBHOOK:", JSON.stringify(body, null, 2));
-
-    const event = body.event;
-    if (event !== "message_created") {
-      return res.status(200).json({ ok: true, ignored: "event_not_needed" });
+    if (!isIncomingUserMessage(body)) {
+      return;
     }
 
-    const messageType = body.message_type;
-    const content = body.content || "";
     const conversationId = body.conversation?.id;
+    const text = getTextFromMessage(body);
+    const contactPhone =
+      body.conversation?.meta?.sender?.phone_number ||
+      body.sender?.phone_number ||
+      body.contact?.phone_number ||
+      "unknown";
 
-    // Solo responder mensajes entrantes del usuario
-    if (messageType !== "incoming") {
-      return res.status(200).json({ ok: true, ignored: "not_incoming" });
+    if (!conversationId || !text) {
+      return;
     }
 
-    // Evitar responder mensajes vacíos
-    if (!content.trim()) {
-      return res.status(200).json({ ok: true, ignored: "empty_message" });
+    const rl = isRateLimited(contactPhone);
+    if (rl.limited) {
+      await sendChatwootReply(
+        conversationId,
+        "⚠️ Estás enviando muchos mensajes muy rápido. Intenta de nuevo en unos minutos."
+      );
+      return;
     }
 
-    // Aquí va tu lógica del bot
-    let reply = "Hola 👋 Gracias por escribirnos. ¿En qué podemos ayudarte?";
-
-    const lower = content.toLowerCase();
-
-    if (lower.includes("certificado")) {
-      reply = "Claro. Por favor indícame tu número de cédula para ayudarte con el certificado.";
-    } else if (lower.includes("curso")) {
-      reply = "Con gusto. Te ayudamos con el curso de manipulación de alimentos. ¿Deseas información, registro o certificado?";
-    } else if (lower.includes("ayuda")) {
-      reply = "Estoy para ayudarte. Cuéntame qué necesitas y te orientamos.";
-    }
-
-    // Enviar respuesta a Chatwoot
-    const response = await fetch(
-      `${process.env.CHATWOOT_BASE_URL}/api/v1/accounts/${process.env.CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          api_access_token: process.env.CHATWOOT_API_TOKEN,
-        },
-        body: JSON.stringify({
-          content: reply,
-          message_type: "outgoing",
-          private: false,
-        }),
-      }
-    );
-
-    const responseData = await response.text();
-    console.log("CHATWOOT SEND RESPONSE:", response.status, responseData);
-
-    return res.status(200).json({ ok: true });
+    const reply = await buildReply(text);
+    await sendChatwootReply(conversationId, reply);
   } catch (error) {
-    console.error("CHATWOOT WEBHOOK ERROR:", error);
-    return res.status(500).json({ ok: false, error: error.message });
+    console.error("❌ CHATWOOT WEBHOOK ERROR:", error);
   }
 });
 
