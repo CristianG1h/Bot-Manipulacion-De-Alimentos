@@ -5,22 +5,22 @@ const express = require("express");
 const webhookRouter = require("./routes/webhook");
 const notifyRouter = require("./routes/notify");
 const certificateRouter = require("./routes/certificate");
-const chatwootRouter = require("./routes/chatwoot"); // ✅ NUEVO
+const chatwootRouter = require("./routes/chatwoot");
 
 const app = express();
 app.use(express.json());
 
-// Rutas
+// Meta
 app.use("/webhook", webhookRouter);
 
-// ✅ Chatwoot
-app.use("/chatwoot", chatwootRouter); // ✅ NUEVO
+// Chatwoot
+app.use("/chatwoot", chatwootRouter);
 
-// ✅ Notificaciones
-app.use("/notify", notifyRouter);      // POST /notify/access
-app.use("/api/notify", notifyRouter);  // POST /api/notify/access
+// Notificaciones
+app.use("/notify", notifyRouter);
+app.use("/api/notify", notifyRouter);
 
-// ✅ Certificados
+// Certificados
 app.use("/notify/certificate", certificateRouter);
 
 // Healthcheck
