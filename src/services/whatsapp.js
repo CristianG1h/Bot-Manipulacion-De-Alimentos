@@ -39,9 +39,7 @@ async function sendMainMenu(to) {
 
   const bodyText =
     "✨ *VIP Salud Ocupacional*\n\n" +
-    "¡Hola! 👋\n" +
-    "Bienvenido(a) al proceso del *Curso de Manipulación de Alimentos*.\n\n" +
-    "A través de este chat podrás registrarte para realizar el curso y obtener tu certificado oficial.\n\n" +
+    "Bienvenido(a) al *Curso de Manipulación de Alimentos*.\n\n" +
     "Selecciona una opción para continuar:";
 
   return sendPayload({
@@ -53,8 +51,7 @@ async function sendMainMenu(to) {
       body: { text: bodyText },
       action: {
         buttons: [
-          { type: "reply", reply: { id: "registrarme", title: "📋 Registrarme" } },
-          { type: "reply", reply: { id: "enlace", title: "🔗 Instructivo y link" } },
+          { type: "reply", reply: { id: "enlace", title: "📄 Instructivo y link" } },
           { type: "reply", reply: { id: "asesor", title: "❓ Necesito ayuda" } },
         ],
       },
