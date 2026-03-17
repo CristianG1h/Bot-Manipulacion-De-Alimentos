@@ -17,7 +17,7 @@ async function sendPayload(payload) {
 
     const data = await r.json();
     if (!r.ok) console.error("❌ Error enviando mensaje:", r.status, data);
-    else console.log("✅ Enviado OK");
+    else       console.log("✅ Enviado OK");
   } catch (e) {
     console.error("❌ Fallo fetch a WhatsApp:", e);
   }
@@ -34,29 +34,4 @@ async function sendText(to, bodyText) {
   });
 }
 
-async function sendMainMenu(to) {
-  if (!TOKEN) return;
-
-  const bodyText =
-    "✨ *VIP Salud Ocupacional*\n\n" +
-    "Bienvenido(a) al *Curso de Manipulación de Alimentos*.\n\n" +
-    "Selecciona una opción para continuar:";
-
-  return sendPayload({
-    messaging_product: "whatsapp",
-    to,
-    type: "interactive",
-    interactive: {
-      type: "button",
-      body: { text: bodyText },
-      action: {
-        buttons: [
-          { type: "reply", reply: { id: "enlace", title: "📄 Instructivo y link" } },
-          { type: "reply", reply: { id: "asesor", title: "❓ Necesito ayuda" } },
-        ],
-      },
-    },
-  });
-}
-
-module.exports = { sendPayload, sendText, sendMainMenu };
+module.exports = { sendPayload, sendText };
