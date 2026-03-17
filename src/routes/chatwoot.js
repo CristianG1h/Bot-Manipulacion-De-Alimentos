@@ -1,414 +1,196 @@
 "use strict";
- 
+
 /**
- * src/routes/chatwoot.js — VERSIÓN CORREGIDA
+ * src/routes/chatwoot.js
  *
  * Flujo:
- *   Chatwoot (webhook) → este archivo extrae wa_id + texto/botón
- *   → ejecuta la lógica completa del bot
- *   → responde DIRECTO a la API de Meta (Graph API)
+ *  1. Usuario escribe → bot responde con menú
+ *  2. Usuario pide instructivo/link → bot lo envía directo por WhatsApp
+ *  3. Usuario pregunta algo que el bot no sabe → deja conversación abierta en Chatwoot
+ *     para que un asesor humano la atienda
  *
- * Chatwoot es solo el puente de entrada. Las respuestas van
- * directo a WhatsApp vía WHATSAPP_TOKEN, igual que antes.
+ * Las respuestas van DIRECTO a WhatsApp vía Graph API (WHATSAPP_TOKEN).
+ * Chatwoot solo actúa como puente de entrada del webhook.
  */
- 
+
 const express = require("express");
 const router = express.Router();
- 
-const { sendPayload, sendText, sendMainMenu } = require("../services/whatsapp");
+
+const { sendPayload, sendText } = require("../services/whatsapp");
 const { isRateLimited } = require("../utils/rateLimit");
-const { isValidEmail, normalizeCOCell } = require("../utils/validation");
-const { TEXT_MAX_LEN, DATABASE_URL } = require("../config");
- 
-const {
-  getSession,
-  touchSessionInbound,
-  upsertSessionReset,
-  updateSession,
-  deleteSession,
-  upsertRegistration,
-  cedulaExistsForOtherWa,
-  isProcessedMessage,
-  markMessageProcessed,
-  cleanupProcessedMessages,
-} = require("../db/queries");
- 
-const { dbQuery } = require("../db");
- 
+const { TEXT_MAX_LEN } = require("../config");
+const { isProcessedMessage, markMessageProcessed, cleanupProcessedMessages } = require("../db/queries");
+const { DATABASE_URL } = require("../config");
+
 let lastCleanupAt = 0;
 const CLEANUP_EVERY_MS = 30 * 60 * 1000;
- 
-// ─────────────────────────────────────────────
-// GET  /chatwoot/webhook  (healthcheck)
-// ─────────────────────────────────────────────
-router.get("/webhook", (req, res) => {
-  res.status(200).send("OK CHATWOOT WEBHOOK");
-});
- 
-// ─────────────────────────────────────────────
-// POST /chatwoot/webhook  (entrada principal)
-// ─────────────────────────────────────────────
+
+// ─── Configura aquí tu instructivo ───────────────────────────────────────────
+const COURSE_LINK     = process.env.COURSE_LINK     || "https://www.tu-curso.com";
+const COURSE_PASSWORD = process.env.COURSE_PASSWORD || "curso234";
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── GET /chatwoot/webhook  (healthcheck) ──
+router.get("/webhook", (req, res) => res.status(200).send("OK"));
+
+// ── POST /chatwoot/webhook  (entrada principal) ──
 router.post("/webhook", async (req, res) => {
-  // Responder inmediato a Chatwoot para que no reintente
+  // Responder inmediato para que Chatwoot no reintente
   res.status(200).json({ ok: true });
- 
+
   try {
     const body = req.body;
- 
-    // ── Solo procesar mensajes entrantes del usuario ──
-    if (body.event !== "message_created") return;
-    if (body.message_type !== "incoming") return;
-    if (body.private === true) return;
- 
-    // ── Extraer el número de teléfono del usuario (wa_id) ──
-    // Chatwoot lo manda en diferentes lugares según la versión
-    const wa_id =
-      body.meta?.sender?.phone_number?.replace(/\D/g, "") ||   // ej: "+573001234567" → "573001234567"
-      body.conversation?.meta?.sender?.phone_number?.replace(/\D/g, "") ||
-      body.contact?.phone_number?.replace(/\D/g, "") ||
+
+    // Solo mensajes entrantes del usuario (no notas internas, no outgoing)
+    if (body.event !== "message_created")  return;
+    if (body.message_type !== "incoming")  return;
+    if (body.private === true)             return;
+
+    // ── Extraer wa_id (número del usuario) ──────────────────────────────────
+    // Chatwoot lo envía en distintos lugares según su versión.
+    // Probamos de más específico a más general.
+    const rawPhone =
+      body.meta?.sender?.phone_number ||
+      body.conversation?.meta?.sender?.phone_number ||
+      body.contact?.phone_number ||
       null;
- 
-    if (!wa_id) {
-      console.log("❌ No se pudo extraer wa_id del payload de Chatwoot");
-      console.log("📩 Payload recibido:", JSON.stringify(body, null, 2));
+
+    if (!rawPhone) {
+      console.log("❌ No se pudo extraer teléfono del payload Chatwoot");
+      console.log("📩 Payload:", JSON.stringify(body, null, 2));
       return;
     }
- 
-    console.log(`📩 Mensaje entrante de wa_id: ${wa_id}`);
- 
-    // ── Rate limiting ──
+
+    // Quitar todo excepto dígitos (ej: "+57300..." → "57300...")
+    const wa_id = rawPhone.replace(/\D/g, "");
+    console.log(`📩 Mensaje entrante wa_id: ${wa_id}`);
+
+    // ── Rate limiting ────────────────────────────────────────────────────────
     const rl = isRateLimited(wa_id);
     if (rl.limited) {
       if (rl.reason === "too_many") {
-        await sendText(wa_id, "⚠️ Estás enviando muchos mensajes muy rápido. Intenta de nuevo en unos minutos.");
+        await sendText(wa_id, "⚠️ Estás enviando muchos mensajes muy rápido. Intenta en unos minutos.");
       }
       return;
     }
- 
-    // ── Deduplicación por message_id ──
+
+    // ── Deduplicación ────────────────────────────────────────────────────────
     const messageId = body.id ? String(body.id) : null;
     if (messageId && DATABASE_URL) {
-      const already = await isProcessedMessage(messageId);
-      if (already) {
-        console.log("⏭️ Mensaje duplicado ignorado:", messageId);
+      if (await isProcessedMessage(messageId)) {
+        console.log("⏭️ Duplicado ignorado:", messageId);
         return;
       }
       await markMessageProcessed(messageId);
- 
       const now = Date.now();
       if (now - lastCleanupAt > CLEANUP_EVERY_MS) {
         lastCleanupAt = now;
-        cleanupProcessedMessages().catch((e) => console.error("❌ Cleanup error:", e));
+        cleanupProcessedMessages().catch((e) => console.error("❌ Cleanup:", e));
       }
     }
- 
-    // ── Actualizar last_inbound_at si tiene sesión activa ──
-    await touchSessionInbound(wa_id);
- 
-    // ── Detectar si es botón interactivo ──
-    // Chatwoot reenvía el contenido del mensaje en body.content
-    // Los botones de WhatsApp llegan como texto con el title del botón
-    // o a veces en body.content_attributes
+
+    // ── Detectar si es botón interactivo de WhatsApp ─────────────────────────
     const buttonId = body.content_attributes?.items?.[0]?.reply?.id || null;
-    const rawText = (body.content || "").trim();
- 
+
     if (buttonId) {
-      console.log("🔘 Botón recibido:", buttonId);
+      console.log("🔘 Botón:", buttonId);
       return await handleButton(wa_id, buttonId);
     }
- 
-    // ── Validar longitud de texto ──
-    if (rawText && rawText.length > TEXT_MAX_LEN) {
-      await sendText(wa_id, `⚠️ El mensaje es muy largo. Envíalo en menos de ${TEXT_MAX_LEN} caracteres.`);
+
+    // ── Texto libre ──────────────────────────────────────────────────────────
+    const rawText = (body.content || "").trim();
+
+    if (!rawText) return; // vacío, ignorar
+
+    if (rawText.length > TEXT_MAX_LEN) {
+      await sendText(wa_id, `⚠️ El mensaje es muy largo. Máximo ${TEXT_MAX_LEN} caracteres.`);
       return;
     }
- 
-    // ── Comandos por texto ──
+
     const t = rawText.toLowerCase();
- 
-    if (!t) return; // mensaje vacío, ignorar
- 
-    if (t === "menu" || t === "menú")          return await sendMainMenu(wa_id);
-    if (t === "registrarme" || t === "registro") return await startRegistration(wa_id);
-    if (t === "enlace" || t === "link")        return await sendCourseInfo(wa_id);
-    if (t === "cancelar" || t === "cancel") {
-      await deleteSession(wa_id);
-      await sendText(wa_id, "✅ Proceso cancelado. Si deseas iniciar de nuevo presiona *📋 Registrarme*.");
+
+    // Palabras clave reconocidas → respuesta automática
+    if (["hola", "buenas", "buenos días", "buen día", "buenas tardes", "buenas noches", "inicio", "menu", "menú", "start", "hi", "hello"].includes(t)) {
       return await sendMainMenu(wa_id);
     }
-    if (t === "ayuda" || t === "asesor") {
-      return await sendText(
-        wa_id,
-        "📞 *Atención personalizada*\n\nPara hablar con un asesor, comunícate directamente al:\n\n📱 *313 401 0901*"
-      );
+
+    if (["instructivo", "link", "enlace", "curso", "acceso", "contraseña"].some(k => t.includes(k))) {
+      return await sendCourseInfo(wa_id);
     }
-    if (t === "corregir" || t === "editar" || t === "me equivoqué" || t === "me equivoque") {
-      const session = await getSession(wa_id);
-      if (!session) {
-        await sendText(wa_id, "No veo un registro en curso. Presiona *📋 Registrarme* para iniciar.");
-        return;
-      }
-      return await sendEditMenu(wa_id);
-    }
- 
-    // ── Si está en un paso de registro ──
-    const session = await getSession(wa_id);
-    if (session) {
-      return await handleRegistrationStep(wa_id, session.step, rawText);
-    }
- 
-    // ── Por defecto: menú principal ──
-    return await sendMainMenu(wa_id);
- 
+
+    // No reconoce el mensaje → dejar abierto para asesor humano en Chatwoot
+    console.log(`🤷 Mensaje no reconocido de ${wa_id}: "${rawText}" — dejando para asesor`);
+    await sendText(
+      wa_id,
+      "👋 Gracias por escribirnos.\n\nEn un momento un asesor revisará tu mensaje y te responderá.\n\nSi necesitas el instructivo del curso, escribe *instructivo*."
+    );
+    // La conversación queda abierta en Chatwoot para atención humana
+
   } catch (error) {
-    console.error("❌ ERROR en /chatwoot/webhook:", error);
+    console.error("❌ Error en /chatwoot/webhook:", error);
   }
 });
- 
+
 // ─────────────────────────────────────────────
-// Manejo de botones interactivos
+// Manejo de botones
 // ─────────────────────────────────────────────
 async function handleButton(wa_id, buttonId) {
-  if (buttonId === "registrarme")  return await startRegistration(wa_id);
-  if (buttonId === "enlace")       return await sendCourseInfo(wa_id);
-  if (buttonId === "asesor") {
-    return await sendText(
+  if (buttonId === "ver_instructivo") return await sendCourseInfo(wa_id);
+  if (buttonId === "hablar_asesor") {
+    await sendText(
       wa_id,
-      "📞 *Atención personalizada*\n\nEste canal funciona únicamente con sistema automático.\n\n" +
-      "Para hablar con un asesor, comunícate directamente al:\n\n📱 *313 401 0901*\n\nCon gusto te ayudaremos."
+      "👤 *Atención personalizada*\n\nUn asesor revisará tu mensaje y te contactará pronto.\n\nTambién puedes llamarnos al:\n📱 *313 401 0901*"
     );
-  }
-  if (buttonId === "continue_reg") {
-    const session = await getSession(wa_id);
-    if (!session) return await startRegistration(wa_id);
-    return await resendStepPrompt(wa_id, session.step);
-  }
-  if (buttonId === "cancel_reg") {
-    await deleteSession(wa_id);
-    await sendText(wa_id, "✅ Listo. Cancelamos el registro. Si deseas empezar de nuevo presiona *📋 Registrarme*.");
-    return await sendMainMenu(wa_id);
-  }
-  if (buttonId === "confirm_reg")  return await finalizeRegistration(wa_id);
-  if (buttonId === "edit_reg")     return await sendEditMenu(wa_id);
-  if (buttonId === "edit_name") {
-    await updateSession(wa_id, { step: "FULL_NAME" });
-    return await sendText(wa_id, "✏️ Escribe nuevamente tu *Nombre y Apellido completo*.");
-  }
-  if (buttonId === "edit_cedula") {
-    await updateSession(wa_id, { step: "CEDULA" });
-    return await sendText(wa_id, "✏️ Escribe nuevamente tu *número de cédula* (solo números).");
-  }
-  if (buttonId === "edit_cell") {
-    await updateSession(wa_id, { step: "CELULAR" });
-    return await sendText(wa_id, "✏️ Escribe nuevamente tu *celular* (10 dígitos, ej: 3001234567).");
-  }
-  if (buttonId === "edit_email") {
-    await updateSession(wa_id, { step: "CORREO" });
-    return await sendText(wa_id, "✏️ Escribe nuevamente tu *correo electrónico*.");
-  }
-  if (buttonId === "back_menu") return await sendMainMenu(wa_id);
- 
-  // Botón desconocido → menú
-  return await sendMainMenu(wa_id);
-}
- 
-// ─────────────────────────────────────────────
-// Flujo de registro paso a paso
-// ─────────────────────────────────────────────
-async function startRegistration(wa_id) {
-  if (!DATABASE_URL) {
-    await sendText(wa_id, "⚠️ En este momento el sistema de registro está en mantenimiento. Escríbenos y te ayudamos.");
+    // Conversación queda abierta en Chatwoot
     return;
   }
-  await upsertSessionReset(wa_id);
-  await sendText(wa_id, "📝 *Registro – Curso de Manipulación de Alimentos*\n\nPor favor escribe tu *Nombre y Apellido completo*.");
+  // Botón no reconocido → menú
+  return await sendMainMenu(wa_id);
 }
- 
-async function resendStepPrompt(wa_id, step) {
-  if (step === "FULL_NAME") return sendText(wa_id, "📝 Escribe tu *Nombre y Apellido completo*.");
-  if (step === "CEDULA")    return sendText(wa_id, "Escribe tu *número de cédula* (solo números).");
-  if (step === "CELULAR")   return sendText(wa_id, "Escribe tu *celular* (10 dígitos, ej: 3001234567).");
-  if (step === "CORREO")    return sendText(wa_id, "Escribe tu *correo electrónico*.");
-  if (step === "CONFIRM")   return sendConfirmPrompt(wa_id);
-  return startRegistration(wa_id);
-}
- 
-async function handleRegistrationStep(wa_id, step, text) {
-  if (!DATABASE_URL) return;
- 
-  if (step === "FULL_NAME") {
-    if ((text || "").length < 5) {
-      return await sendText(wa_id, "Por favor escribe tu *nombre completo* (Nombre y Apellido).");
-    }
-    await updateSession(wa_id, { temp_full_name: text, step: "CEDULA" });
-    return await sendText(wa_id, "Perfecto ✅ Ahora escribe tu *número de cédula* (solo números).");
-  }
- 
-  if (step === "CEDULA") {
-    const ced = (text || "").replace(/\D/g, "");
-    if (ced.length < 5) {
-      return await sendText(wa_id, "La cédula debe tener solo números. Escríbela nuevamente, por favor.");
-    }
-    const exists = await cedulaExistsForOtherWa(ced, wa_id);
-    if (exists) {
-      await deleteSession(wa_id);
-      return await sendText(
-        wa_id,
-        "⚠️ Esta cédula ya aparece registrada en nuestro sistema.\n\nSi necesitas actualizar tus datos, escribe *Ayuda*."
-      );
-    }
-    await updateSession(wa_id, { temp_cedula: ced, step: "CELULAR" });
-    return await sendText(wa_id, "Gracias ✅ Ahora escribe tu *número de celular* (ej: 3001234567).");
-  }
- 
-  if (step === "CELULAR") {
-    const norm = normalizeCOCell(text);
-    if (!norm) {
-      return await sendText(
-        wa_id,
-        "Celular inválido. Debe ser móvil colombiano (10 dígitos y empezar por 3). Ej: 3001234567"
-      );
-    }
-    await updateSession(wa_id, { temp_celular: norm.e164, step: "CORREO" });
-    return await sendText(wa_id, "Excelente ✅ Por último, escribe tu *correo electrónico*.");
-  }
- 
-  if (step === "CORREO") {
-    const correo = (text || "").trim().toLowerCase();
-    if (!isValidEmail(correo)) {
-      return await sendText(wa_id, "Ese correo no parece válido. Escríbelo nuevamente, por favor.");
-    }
-    await updateSession(wa_id, { temp_correo: correo, step: "CONFIRM" });
-    return await sendConfirmPrompt(wa_id);
-  }
- 
-  if (step === "CONFIRM") {
-    return await sendText(
-      wa_id,
-      "Por favor confirma tu registro usando los botones:\n✅ Confirmar o ✏️ Corregir\n\nTambién puedes escribir: *corregir*"
-    );
-  }
- 
-  await deleteSession(wa_id);
-  return await sendText(wa_id, "Se reinició el proceso. Por favor presiona *📋 Registrarme* nuevamente.");
-}
- 
-async function sendConfirmPrompt(to) {
-  if (!DATABASE_URL) return;
-  const session = await getSession(to);
-  if (!session) {
-    return await sendText(to, "Se reinició el proceso. Por favor presiona *📋 Registrarme* nuevamente.");
-  }
- 
-  const summary =
-    "✅ *Confirma tus datos*\n\n" +
-    `👤 Nombre: *${session.temp_full_name || "-"}*\n` +
-    `🪪 Cédula: *${session.temp_cedula || "-"}*\n` +
-    `📱 Celular: *${session.temp_celular || "-"}*\n` +
-    `📧 Correo: *${session.temp_correo || "-"}*\n\n` +
-    "Si todo está correcto, presiona *✅ Confirmar*.\n" +
-    "Si necesitas cambiar algo, presiona *✏️ Corregir*.";
- 
+
+// ─────────────────────────────────────────────
+// Menú principal
+// ─────────────────────────────────────────────
+async function sendMainMenu(to) {
   return await sendPayload({
     messaging_product: "whatsapp",
     to,
     type: "interactive",
     interactive: {
       type: "button",
-      body: { text: summary },
+      body: {
+        text:
+          "✨ *VIP Salud Ocupacional*\n\n" +
+          "¡Hola! 👋 Bienvenido(a) al *Curso de Manipulación de Alimentos*.\n\n" +
+          "¿En qué te podemos ayudar?",
+      },
       action: {
         buttons: [
-          { type: "reply", reply: { id: "confirm_reg", title: "✅ Confirmar" } },
-          { type: "reply", reply: { id: "edit_reg",    title: "✏️ Corregir" } },
+          { type: "reply", reply: { id: "ver_instructivo", title: "📄 Instructivo y link" } },
+          { type: "reply", reply: { id: "hablar_asesor",   title: "💬 Hablar con asesor"  } },
         ],
       },
     },
   });
 }
- 
-async function sendEditMenu(to) {
-  await sendPayload({
-    messaging_product: "whatsapp",
-    to,
-    type: "interactive",
-    interactive: {
-      type: "button",
-      body: { text: "✏️ *¿Qué dato deseas corregir?*\n\nSelecciona una opción:" },
-      action: {
-        buttons: [
-          { type: "reply", reply: { id: "edit_name",   title: "👤 Nombre" } },
-          { type: "reply", reply: { id: "edit_cedula", title: "🪪 Cédula" } },
-          { type: "reply", reply: { id: "edit_cell",   title: "📱 Celular" } },
-        ],
-      },
-    },
-  });
-  // WhatsApp solo permite 3 botones por mensaje — segundo mensaje para las opciones restantes
-  await sendPayload({
-    messaging_product: "whatsapp",
-    to,
-    type: "interactive",
-    interactive: {
-      type: "button",
-      body: { text: "Otras opciones:" },
-      action: {
-        buttons: [
-          { type: "reply", reply: { id: "edit_email", title: "📧 Correo" } },
-          { type: "reply", reply: { id: "back_menu",  title: "⬅️ Volver al menú" } },
-        ],
-      },
-    },
-  });
-}
- 
-async function finalizeRegistration(wa_id) {
-  if (!DATABASE_URL) return;
-  const session = await getSession(wa_id);
-  if (!session) {
-    await sendText(wa_id, "Se reinició el proceso. Por favor presiona *📋 Registrarme* nuevamente.");
-    return;
-  }
-  if (!session.temp_full_name || !session.temp_cedula || !session.temp_celular || !session.temp_correo) {
-    await sendText(wa_id, "⚠️ Faltan datos por completar. Escribe *corregir* o presiona *📋 Registrarme*.");
-    return;
-  }
-  const exists = await cedulaExistsForOtherWa(session.temp_cedula, wa_id);
-  if (exists) {
-    await deleteSession(wa_id);
-    await sendText(
-      wa_id,
-      "⚠️ Esta cédula ya aparece registrada en nuestro sistema.\n\nSi necesitas actualizar tus datos, escribe *Ayuda*."
-    );
-    return;
-  }
-  await upsertRegistration(wa_id, session.temp_full_name, session.temp_cedula, session.temp_celular, session.temp_correo);
-  await deleteSession(wa_id);
-  await sendText(
-    wa_id,
-    "✅ *Registro completado*\n\n¡Gracias! Tu información quedó registrada correctamente.\n\n" +
-    "Ahora puedes ver el instructivo y el enlace del curso en el botón:\n🔗 *Instructivo y link*"
-  );
-  return await sendMainMenu(wa_id);
-}
- 
+
+// ─────────────────────────────────────────────
+// Instructivo y link del curso
+// ─────────────────────────────────────────────
 async function sendCourseInfo(to) {
-  const link     = "https://www.curso.com"; // ← tu link real
-  const password = "curso234";              // ← si aplica
- 
   const msg =
     "🎓 *Curso de Manipulación de Alimentos*\n\n" +
-    "A continuación te compartimos el instructivo para iniciar tu capacitación:\n\n" +
-    `1️⃣ Ingresa al siguiente enlace:\n${link}\n\n` +
+    "Aquí tienes el acceso para iniciar tu capacitación:\n\n" +
+    `1️⃣ Ingresa al enlace:\n${COURSE_LINK}\n\n` +
     "2️⃣ Usuario: tu correo electrónico\n" +
-    `🔐 Contraseña: ${password}\n\n` +
-    "3️⃣ Una vez ingreses, haz clic en *INICIAR*.\n\n" +
-    "4️⃣ Selecciona *Iniciar lección* y desarrolla toda la capacitación.\n\n" +
-    "5️⃣ Al finalizar podrás descargar tu certificado, carnet y demás documentos.\n\n" +
-    "Si presentas alguna dificultad durante el proceso, escríbenos y con gusto te ayudamos.\n" +
-    "Quedamos atentos.";
- 
+    `🔐 Contraseña: ${COURSE_PASSWORD}\n\n` +
+    "3️⃣ Haz clic en *INICIAR*.\n\n" +
+    "4️⃣ Selecciona *Iniciar lección* y completa toda la capacitación.\n\n" +
+    "5️⃣ Al finalizar podrás descargar tu *certificado* y demás documentos.\n\n" +
+    "Si tienes alguna dificultad, escríbenos y te ayudamos. 🙌";
+
   await sendText(to, msg);
 }
- 
+
 module.exports = router;
  
