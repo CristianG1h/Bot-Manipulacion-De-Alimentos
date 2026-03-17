@@ -1,201 +1,212 @@
 <div align="center">
-<h1>📘 Bot Manipulación de Alimentos – VIP Salud Ocupacional</h1>
+ 
+<img src="https://img.shields.io/badge/WhatsApp-Bot-25D366?style=for-the-badge&logo=whatsapp&logoColor=white"/>
+<img src="https://img.shields.io/badge/Node.js-20.x-339933?style=for-the-badge&logo=node.js&logoColor=white"/>
+<img src="https://img.shields.io/badge/Express-4.x-000000?style=for-the-badge&logo=express&logoColor=white"/>
+<img src="https://img.shields.io/badge/Render-Deployed-46E3B7?style=for-the-badge&logo=render&logoColor=white"/>
+ 
+# 🤖 Bot WhatsApp — VIP Salud Ocupacional
+ 
+### Asistente automatizado para el *Curso de Manipulación de Alimentos*
+ 
+🟢 En producción &nbsp;|&nbsp; 🟢 Estable &nbsp;|&nbsp; 🟢 Sin base de datos &nbsp;|&nbsp; 🟢 Anti-spam activo &nbsp;|&nbsp; 🟢 Modo asesor humano
+ 
 </div>
-<p></p>
+ 
+---
+ 
+## 📋 Descripción
+ 
+Chatbot automatizado para **VIP Salud Ocupacional** que atiende a los usuarios del Curso de Manipulación de Alimentos directamente por WhatsApp.
+ 
+El bot funciona como primer punto de contacto: responde saludos, entrega el instructivo y enlace del curso, y cuando el usuario necesita atención personalizada **silencia el bot y deja que un asesor humano tome el control** desde Chatwoot.
+ 
+---
+ 
+## 🏗️ Arquitectura
+ 
+```
+Usuario WhatsApp
+      ↓
+Meta Cloud API
+      ↓
+Chatwoot  ──────────────→  /chatwoot/webhook  (Render)
+                                   ↓
+                         Servidor Node.js (Express)
+                                   ↓
+                     Responde directo vía Graph API
+```
+ 
+> **Chatwoot** actúa como puente de entrada del webhook.
+> Las respuestas van **directamente** a WhatsApp vía Meta Graph API.
+> No se usa base de datos — todo en memoria.
+ 
+---
+ 
+## 🔄 Flujo del Usuario
+ 
+```
+1. Usuario escribe al número empresarial
+        ↓
+2. Bot detecta saludo → muestra menú interactivo
+        ↓
+   ┌─────────────────────┬──────────────────────┐
+   │  📄 Instructivo     │  💬 Hablar con asesor │
+   └─────────────────────┴──────────────────────┘
+        ↓                         ↓
+3. Bot envía el          4. Bot se SILENCIA
+   instructivo y            Asesor humano
+   link del curso           toma el control
+                            en Chatwoot
+                                  ↓
+                         5. Si en 5 min no hay
+                            respuesta humana,
+                            el bot retoma
+                            automáticamente
+```
+ 
+---
+ 
+## ✨ Funcionalidades
+ 
+### 🤖 Respuesta automática
+- Detecta saludos y muestra el menú con botones interactivos
+- Envía el instructivo y link del curso al instante
+- Reconoce palabras clave: `instructivo`, `link`, `enlace`, `curso`, `acceso`
+ 
+### 👤 Modo asesor humano
+- Al presionar **"Hablar con asesor"** el bot se silencia completamente
+- El asesor puede escribir libremente desde Chatwoot
+- Si el usuario sigue escribiendo, el timer se reinicia (no interrumpe al asesor)
+- Después de **5 minutos sin respuesta humana**, el bot retoma automáticamente con un mensaje de disculpa y opciones
+ 
+### 🛡️ Protección anti-spam
+- Límite de **8 mensajes por minuto** por usuario
+- Bloqueo temporal de **5 minutos** si se excede el límite
+- Longitud máxima de mensaje: **500 caracteres**
+ 
+### 🔁 Deduplicación en memoria
+- Evita procesar el mismo mensaje dos veces (reintentos del webhook)
+- Se limpia automáticamente cada **24 horas**
+- Sin necesidad de base de datos
+ 
+### 📤 Notificaciones salientes
+- **`/notify/access`** — Envía plantilla de acceso al curso (`acceso_curso1`)
+- **`/notify/certificate`** — Envía plantilla de certificado aprobado (`certificado_aprobado_v1`)
+ 
+---
+ 
+## ⚙️ Tecnologías
+ 
+| Tecnología | Uso |
+|---|---|
+| **Node.js 20.x** | Runtime del servidor |
+| **Express 4** | Framework HTTP |
+| **WhatsApp Cloud API (Meta)** | Envío de mensajes |
+| **Chatwoot** | Webhook de entrada + gestión de asesores |
+| **Render** | Hosting en producción |
+| **GitHub** | Control de versiones |
+ 
+---
+ 
+## 🗂️ Estructura del Proyecto
+ 
+```
+📦 Bot-Manipulacion-De-Alimentos
+├── 📄 package.json
+└── 📁 src
+    ├── 📄 server.js          ← Entrada principal
+    ├── 📄 config.js          ← Variables de entorno
+    ├── 📁 routes
+    │   ├── 📄 chatwoot.js    ← Webhook principal del bot ⭐
+    │   ├── 📄 notify.js      ← Notificaciones de acceso
+    │   └── 📄 certificate.js ← Notificaciones de certificado
+    ├── 📁 services
+    │   └── 📄 whatsapp.js    ← Envío a Graph API
+    └── 📁 utils
+        ├── 📄 rateLimit.js   ← Anti-spam
+        └── 📄 validation.js  ← Normalización de teléfono
+```
+ 
+---
+ 
+## 🔐 Variables de Entorno
+ 
+Configura estas variables en **Render → Environment**:
+ 
+| Variable | Descripción | Requerida |
+|---|---|:---:|
+| `WHATSAPP_TOKEN` | Token de acceso de Meta | ✅ |
+| `PHONE_NUMBER_ID` | ID del número de WhatsApp | ✅ |
+| `CHATWOOT_BASE_URL` | URL de tu instancia Chatwoot | ✅ |
+| `CHATWOOT_API_TOKEN` | Token API de Chatwoot | ✅ |
+| `CHATWOOT_ACCOUNT_ID` | ID de cuenta en Chatwoot | ✅ |
+| `COURSE_LINK` | Link del curso | ✅ |
+| `COURSE_PASSWORD` | Contraseña del curso | ✅ |
+| `API_KEY_NOTIFY` | Clave para endpoints de notificación | ✅ |
+| `VERIFY_TOKEN` | Token de verificación del webhook | ✅ |
+| `GRAPH_VERSION` | Versión de Graph API (default: `v22.0`) | ⬜ |
+| `PORT` | Puerto del servidor (default: `3000`) | ⬜ |
+ 
+---
+ 
+## 🌐 Endpoints disponibles
+ 
+| Método | Endpoint | Descripción |
+|---|---|---|
+| `GET` | `/` | Healthcheck |
+| `GET` | `/chatwoot/webhook` | Verificación Chatwoot |
+| `POST` | `/chatwoot/webhook` | Entrada de mensajes ⭐ |
+| `POST` | `/notify/access` | Enviar acceso al curso |
+| `POST` | `/notify/certificate` | Enviar certificado |
+ 
+---
+ 
+## 🛡️ Seguridad
+ 
+- ✅ Tokens almacenados en variables de entorno (nunca en código)
+- ✅ Endpoints de notificación protegidos con `x-api-key`
+- ✅ Prevención de mensajes duplicados (deduplicación en memoria)
+- ✅ Protección anti-spam con rate limiting por usuario
+- ✅ Validación y normalización de números colombianos (+57)
+ 
+---
+ 
+## 🔮 Mejoras Futuras
+ 
+- [ ] Dashboard administrativo web
+- [ ] Notificaciones automáticas al finalizar el curso
+- [ ] Integración directa con plataforma e-learning
+- [ ] Generación automática de certificados
+- [ ] Métricas y reportes de atención
+- [ ] Soporte multi-curso y multi-sede
+ 
+---
+ 
+## 📌 Estado del Proyecto
+ 
+| Item | Estado |
+|---|---|
+| Servidor en producción | 🟢 Activo |
+| Bot respondiendo mensajes | 🟢 Activo |
+| Modo asesor humano | 🟢 Activo |
+| Notificaciones salientes | 🟢 Activo |
+| Base de datos | ⚪ No utilizada |
+| Anti-spam | 🟢 Activo |
+ 
+---
+ 
 <div align="center">
-<h2>🚀 Descripción</h2>
-</div>
-<p></p>
-Chatbot automatizado para el proceso de registro del Curso de Manipulación de Alimentos, desarrollado para VIP Salud Ocupacional.
-<p></p>
-El bot permite:
-<p></p>
-<ol>
-  <li>Registro automatizado de usuarios vía WhatsApp</li>
-  <li>Almacenamiento seguro en PostgreSQL</li>
-  <li>Envío de instructivo y enlace del curso</li>
-  <li>Manejo de sesiones por pasos</li>
-  <li>Prevención de mensajes duplicados (Webhook retry protection)</li>
-  <li>Envío de instructivo y enlace del curso</li>
-  <li>Limpieza automática de eventos antiguos</li>
-  <li>Despliegue en producción con Render</li>
-  <li><strong>Reintento inteligente</strong> si el usuario abandona el registro (recordatorio automático tras inactividad)</li>
-  <li><strong>Rate limiting / Anti-spam</strong> con bloqueo temporal por exceso de mensajes</li>
-  <li><strong>Validaciones profesionales y normalización de datos</strong> (+57, correo válido y cédula sin duplicados)</li>
-  <li>Este sistema elimina la gestión manual y garantiza trazabilidad de los registros.</li>
-</ol>
-<p></p>
-<div align="center">
-<h2>🏗️ Arquitectura</h2>
-</div>
-<p></p>
-flowchart TD
-<p></p>
-<div align="center">
-  Usuario WhatsApp
-      <p>↓</p>
-  Meta Cloud API
-      <p>↓</p>
-  Webhook (Render)
-      <p>↓</p>
-  servidor Node.js (Express)
-      <p>↓</p>
-  PostgreSQL (Render DB)
-</div>
-<p></p>
-<div align="center">
-<h2>⚙️ Tecnologías Utilizadas</h2>
-</div>
-<p></p>
-<ul>
-  <li>Node.js 18+</li>
-  <li>Express 5</li>
-  <li>PostgreSQL</li>
-  <li>Render (Hosting)</li>
-  <li>WhatsApp Cloud API (Meta)</li>
-  <li>GitHub (Control de versiones)</li>
-  <li>Protección contra duplicados</li>
-  <li>Control anti-spam y limitación de tráfico</li>
-</ul>
-<p></p>
-<div align="center">
-<h2>🔐 Variables de Entorno</h2>
-</div>
-<p></p>
-El proyecto requiere las siguientes variables:
-<p></p>
-<ul>
-  <li>VERIFY_TOKEN=vip_verify_123</li>
-  <li>WHATSAPP_TOKEN=TU_TOKEN_DE_META</li>
-  <li>PHONE_NUMBER_ID=TU_PHONE_NUMBER_ID</li>
-  <li>DATABASE_URL=postgresql://usuario:password@host/database</li>
-</ul>
-<p></p>
-<div align="center">
-<h2>🧠 Funcionalidades Implementadas</h2>
-</div>
-<p></p>
-<ol>
-
-  <li>
-    <strong>Registro por pasos</strong><br>
-    El bot guía al usuario mediante flujo conversacional:
-    <ul>
-      <li>Nombre completo</li>
-      <li>Cédula</li>
-      <li>Celular (validación colombiana y normalización +57)</li>
-      <li>Correo electrónico (validación robusta)</li>
-      <li>La sesión se almacena temporalmente en la tabla <code>sessions</code>.</li>
-    </ul>
-  </li>
-
-  <li>
-    <strong>Persistencia en PostgreSQL</strong><br>
-    Tablas principales:
-    <ul>
-      <li><code>registrations</code> – Guarda el registro definitivo del usuario (cédula con índice único).</li>
-      <li><code>sessions</code> – Controla el flujo conversacional.</li>
-      <li><code>processed_messages</code> – Evita procesamiento duplicado de eventos Webhook.</li>
-    </ul>
-  </li>
-
-  <li><strong>Envío de instructivo y enlace del curso</strong></li>
-
-  <li><strong>Manejo de sesiones por pasos</strong></li>
-
-  <li><strong>Prevención de mensajes duplicados (Webhook retry protection)</strong></li>
-
-  <li>
-    <strong>Reintento inteligente (abandono de registro)</strong><br>
-    Si el usuario no responde durante un período definido:
-    <ul>
-      <li>Se envía recordatorio automático.</li>
-      <li>Incluye botones: Continuar / Cancelar.</li>
-      <li>Máximo de intentos controlado por sesión.</li>
-      <li>Expiración automática de sesiones inactivas.</li>
-    </ul>
-  </li>
-
-  <li>
-    <strong>Rate limiting / Anti-spam</strong><br>
-    Protección ante abuso o flood:
-    <ul>
-      <li>Límite de mensajes por minuto por usuario.</li>
-      <li>Bloqueo temporal automático si excede el límite.</li>
-      <li>Validación de longitud máxima de texto.</li>
-    </ul>
-  </li>
-
-  <li>
-    <strong>Limpieza automática de eventos antiguos</strong><br>
-    Los IDs procesados se eliminan automáticamente después de 24 horas para evitar crecimiento innecesario de la base de datos.
-  </li>
-
-  <li><strong>Despliegue en producción con Render</strong></li>
-
-  <li>
-    Este sistema elimina la gestión manual y garantiza trazabilidad de los registros.
-  </li>
-
-</ol>
-<div align="center">
-<h2>🔄 Flujo del Usuario</h2>
-</div>
-<ol>
-  <li>Usuario escribe al número empresarial.</li>
-  <li>El bot muestra menú interactivo.</li>
-  <li>El usuario selecciona "Registrarme".</li>
-  <li>Se inicia flujo de captura de datos.</li>
-  <li>Se validan y normalizan los datos.</li>
-  <li>Se guarda información en la base de datos.</li>
-  <li>Se envía instructivo y enlace del curso.</li>
-  <li>Si abandona el proceso, se activa recordatorio automático.</li>
-</ol>
-<div align="center">
-<h2>🛡️ Seguridad</h2>
-</div>
-<ol>
-  <li>Tokens almacenados en variables de entorno.</li>
-  <li>Conexión SSL a PostgreSQL.</li>
-  <li>Validación de Webhook mediante <code>VERIFY_TOKEN</code>.</li>
-  <li>Prevención de eventos duplicados.</li>
-  <li>Protección anti-spam integrada.</li>
-  <li>Normalización y validación estricta de datos.</li>
-</ol>
-<div align="center">
-<h2>🔮 Mejoras Futuras</h2>
-</div>
-<ol>
-  <li>Dashboard administrativo web</li>
-  <li>Notificaciones automáticas al finalizar curso</li>
-  <li>Integración directa con plataforma e-learning</li>
-  <li>Generación automática de certificados</li>
-  <li>Métricas y reportes</li>
-  <li>Multi-curso y multi-sede</li>
-</ol>
-<div align="center">
-<h2>📌 Estado del Proyecto</h2>
-</div>
-<p></p>
-🟢 En producción
-<p></p>
-🟢 Estable
-<p></p>
-🟢 Base de datos persistente
-<p></p>
-🟢 Protección contra duplicados
-<p></p>
-🟢 Sistema de recuperación automática de registros
-<p></p>
-🟢 Control anti-spam activo
-<p></p>
-<div align="center">
-<h2>👨‍💻 Autor</h2>
-<p></p>
-Cristian Guarin
-<p></p>
+ 
+## 👨‍💻 Autor
+ 
+**Cristian Guarín**
 Ingeniero en Sistemas
-<p></p>
-Bogotá – Colombia
+Bogotá, Colombia
+ 
+---
+ 
+*Desarrollado con ❤️ para VIP Salud Ocupacional*
+ 
 </div>
-<p></p>
+ 
