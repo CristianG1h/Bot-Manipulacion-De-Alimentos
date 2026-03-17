@@ -196,7 +196,7 @@ async function sendCourseInfo(to) {
     "🎓 *Curso de Manipulación de Alimentos*\n\n" +
     "Aquí tienes el acceso para iniciar tu capacitación:\n\n" +
     `1️⃣ Ingresa al enlace:\n${COURSE_LINK}\n\n` +
-    "2️⃣ Usuario: tu correo electrónico\n" +
+    "2️⃣ Usuario: CEDULA\n" +
     `🔐 Contraseña: ${COURSE_PASSWORD}\n\n` +
     "3️⃣ Haz clic en *INICIAR*.\n\n" +
     "4️⃣ Selecciona *Iniciar lección* y completa toda la capacitación.\n\n" +
