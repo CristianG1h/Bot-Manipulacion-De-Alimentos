@@ -7,12 +7,11 @@ const { sendPayload, sendText } = require("../services/whatsapp");
 const { isRateLimited } = require("../utils/rateLimit");
 const { TEXT_MAX_LEN } = require("../config");
 
-let lastCleanupAt = 0;
-const CLEANUP_EVERY_MS = 30 * 60 * 1000;
+// ─── Protección webhook ───────────────────────────────────────────────────────
+const WEBHOOK_TOKEN = process.env.CHATWOOT_WEBHOOK_TOKEN;
 
 // ─── Config del curso ─────────────────────────────────────────────────────────
-const COURSE_LINK     = process.env.COURSE_LINK     || "https://vip-alimentos-703743967183.us-central1.run.app/login";
-const COURSE_PASSWORD = process.env.COURSE_PASSWORD || "CEDULA";
+const { TEXT_MAX_LEN, COURSE_LINK, COURSE_PASSWORD } = require("../config");
 
 // ─── Deduplicación en memoria ─────────────────────────────────────────────────
 const processedIds = new Set();
@@ -63,6 +62,13 @@ function extractButtonId(body) {
 router.get("/webhook", (req, res) => res.status(200).send("OK"));
 
 router.post("/webhook", async (req, res) => {
+
+  // ─── Verificación del token ──────────────────────────────────────────────
+  if (WEBHOOK_TOKEN && req.query.token !== WEBHOOK_TOKEN) {
+    console.warn("⚠️ Webhook rechazado — token inválido o ausente");
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+
   res.status(200).json({ ok: true });
 
   try {
