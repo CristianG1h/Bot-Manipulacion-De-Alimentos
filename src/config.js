@@ -1,8 +1,8 @@
 "use strict";
 
 module.exports = {
-  VERIFY_TOKEN:    process.env.VERIFY_TOKEN    || "vip_verify_123",
-  PHONE_NUMBER_ID: process.env.PHONE_NUMBER_ID || "1065395483314461",
+  VERIFY_TOKEN:    process.env.VERIFY_TOKEN,
+  PHONE_NUMBER_ID: process.env.PHONE_NUMBER_ID,
   TOKEN:           process.env.WHATSAPP_TOKEN,
 
   // Rate limiting
