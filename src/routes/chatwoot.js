@@ -5,7 +5,6 @@ const router = express.Router();
 
 const { sendPayload, sendText } = require("../services/whatsapp");
 const { isRateLimited } = require("../utils/rateLimit");
-const { TEXT_MAX_LEN } = require("../config");
 
 // ─── Protección webhook ───────────────────────────────────────────────────────
 const WEBHOOK_TOKEN = process.env.CHATWOOT_WEBHOOK_TOKEN;
