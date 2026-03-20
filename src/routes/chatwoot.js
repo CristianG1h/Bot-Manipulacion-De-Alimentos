@@ -6,7 +6,6 @@ const router = express.Router();
 const { sendPayload, sendText } = require("../services/whatsapp");
 const { isRateLimited } = require("../utils/rateLimit");
 const { TEXT_MAX_LEN, COURSE_LINK, COURSE_PASSWORD } = require("../config");
-const redis = require("../services/redis");
 
 // ─── Protección webhook ───────────────────────────────────────────────────────
 const WEBHOOK_TOKEN = process.env.CHATWOOT_WEBHOOK_TOKEN;
@@ -15,39 +14,37 @@ const WEBHOOK_TOKEN = process.env.CHATWOOT_WEBHOOK_TOKEN;
 const processedIds = new Set();
 setInterval(() => processedIds.clear(), 24 * 60 * 60 * 1000);
 
-// ─── Modo asesor (Redis) ──────────────────────────────────────────────────────
-const ADVISOR_TTL = 5 * 60; // 5 minutos en segundos
-const advisorKey  = (wa_id) => `advisor:${wa_id}`;
+// ─── Modo asesor ──────────────────────────────────────────────────────────────
+const advisorMode = new Map();
+const ADVISOR_TIMEOUT_MS = 5 * 60 * 1000;
 
-async function isAdvisorMode(wa_id) {
-  try {
-    const val = await redis.get(advisorKey(wa_id));
-    return val === "1";
-  } catch (e) {
-    console.error("❌ Redis error:", e.message);
-    return false;
+function setAdvisorMode(wa_id) {
+  clearAdvisorMode(wa_id, false);
+  const timer = setTimeout(async () => {
+    advisorMode.delete(wa_id);
+    console.log(`⏰ Timeout asesor expirado para ${wa_id} — bot retoma`);
+    await sendText(
+      wa_id,
+      "⏱️ Han pasado 5 minutos sin respuesta de nuestro equipo.\n\n" +
+      "Si aún necesitas ayuda puedes:\n\n" +
+      "📱 Llamarnos al *313 401 0901*\n" +
+      "📄 O escribir *instructivo* para recibir el link del curso.\n\n" +
+      "Seguimos a tu disposición. 🙌"
+    );
+  }, ADVISOR_TIMEOUT_MS);
+  advisorMode.set(wa_id, timer);
+  console.log(`👤 Modo asesor activado para ${wa_id}`);
+}
+
+function clearAdvisorMode(wa_id, log = true) {
+  const timer = advisorMode.get(wa_id);
+  if (timer) {
+    clearTimeout(timer);
+    advisorMode.delete(wa_id);
+    if (log) console.log(`✅ Modo asesor desactivado para ${wa_id}`);
   }
 }
 
-async function setAdvisorMode(wa_id) {
-  try {
-    await redis.set(advisorKey(wa_id), "1", { ex: ADVISOR_TTL });
-    console.log(`👤 Modo asesor activado para ${wa_id}`);
-  } catch (e) {
-    console.error("❌ Redis error en setAdvisorMode:", e.message);
-  }
-}
-
-async function clearAdvisorMode(wa_id) {
-  try {
-    await redis.del(advisorKey(wa_id));
-    console.log(`✅ Modo asesor desactivado para ${wa_id}`);
-  } catch (e) {
-    console.error("❌ Redis error en clearAdvisorMode:", e.message);
-  }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function extractButtonId(body) {
   const id = body.content_attributes?.items?.[0]?.reply?.id;
   if (id) return id;
@@ -94,8 +91,7 @@ router.post("/webhook", async (req, res) => {
     const wa_id = rawPhone.replace(/\D/g, "");
     console.log(`📩 Mensaje de ${wa_id}`);
 
-    // Rate limiting
-    const rl = await isRateLimited(wa_id);
+    const rl = isRateLimited(wa_id);
     if (rl.limited) {
       if (rl.reason === "too_many") {
         await sendText(wa_id, "⚠️ Demasiados mensajes seguidos. Intenta en unos minutos.");
@@ -103,7 +99,6 @@ router.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Deduplicación
     const messageId = body.id ? String(body.id) : null;
     if (messageId) {
       if (processedIds.has(messageId)) {
@@ -113,27 +108,22 @@ router.post("/webhook", async (req, res) => {
       processedIds.add(messageId);
     }
 
-    // Botones
     const buttonId = extractButtonId(body);
     if (buttonId) {
       console.log("🔘 Botón:", buttonId);
-      await clearAdvisorMode(wa_id);
+      clearAdvisorMode(wa_id);
       return await handleButton(wa_id, buttonId);
     }
 
-    // Modo asesor
-    if (await isAdvisorMode(wa_id)) {
+    if (advisorMode.has(wa_id)) {
       console.log(`🤐 ${wa_id} en modo asesor — bot silenciado`);
-      // Renueva el TTL cada vez que el usuario escribe
-      await setAdvisorMode(wa_id);
+      setAdvisorMode(wa_id);
       return;
     }
 
-    // Texto vacío
     const rawText = (body.content || "").trim();
     if (!rawText) return;
 
-    // Texto muy largo
     if (rawText.length > TEXT_MAX_LEN) {
       await sendText(wa_id, `⚠️ Mensaje muy largo. Máximo ${TEXT_MAX_LEN} caracteres.`);
       return;
@@ -141,18 +131,15 @@ router.post("/webhook", async (req, res) => {
 
     const t = rawText.toLowerCase();
 
-    // Saludos → menú principal
     const saludos = ["hola", "buenas", "buenos días", "buen día", "buenas tardes",
                      "buenas noches", "inicio", "menu", "menú", "start", "hi", "hello", "👋"];
     if (saludos.includes(t)) return await sendMainMenu(wa_id);
 
-    // Palabras clave del curso
     const cursoKw = ["instructivo", "link", "enlace", "curso", "acceso", "contraseña", "clave"];
     if (cursoKw.some(k => t.includes(k))) return await sendCourseInfo(wa_id);
 
-    // Mensaje no reconocido → asesor
     console.log(`🤷 Mensaje no reconocido de ${wa_id}: "${rawText}"`);
-    await setAdvisorMode(wa_id);
+    setAdvisorMode(wa_id);
     await sendText(
       wa_id,
       "👋 Gracias por escribirnos.\n\n" +
@@ -171,7 +158,7 @@ async function handleButton(wa_id, buttonId) {
   if (buttonId === "ver_instructivo") return await sendCourseInfo(wa_id);
 
   if (buttonId === "hablar_asesor") {
-    await setAdvisorMode(wa_id);
+    setAdvisorMode(wa_id);
     await sendText(
       wa_id,
       "👤 *Atención personalizada*\n\n" +
@@ -224,4 +211,5 @@ async function sendCourseInfo(to) {
   await sendText(to, msg);
 }
 
+module.exports = router;
 module.exports = router;
