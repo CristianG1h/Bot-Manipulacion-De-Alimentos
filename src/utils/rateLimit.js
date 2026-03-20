@@ -1,27 +1,28 @@
 "use strict";
 
-const redis = require("../services/redis");
 const { RATE_MAX_PER_MIN, RATE_BLOCK_MIN } = require("../config");
 
-async function isRateLimited(wa_id) {
-  const blockedKey = `blocked:${wa_id}`;
-  const countKey   = `rate:${wa_id}`;
+const rateState = new Map();
 
-  // ¿Está bloqueado?
-  const blocked = await redis.get(blockedKey);
-  if (blocked) return { limited: true, reason: "blocked" };
+function isRateLimited(wa_id) {
+  const now = Date.now();
+  const s = rateState.get(wa_id) || { ts: [], blockedUntil: 0 };
 
-  // Contar mensajes en el último minuto
-  const count = await redis.incr(countKey);
-  if (count === 1) {
-    await redis.expire(countKey, 60); // expira en 60 segundos
+  if (s.blockedUntil && now < s.blockedUntil) {
+    rateState.set(wa_id, s);
+    return { limited: true, reason: "blocked" };
   }
 
-  if (count > RATE_MAX_PER_MIN) {
-    await redis.set(blockedKey, "1", { ex: RATE_BLOCK_MIN * 60 });
+  s.ts = s.ts.filter((t) => now - t < 60_000);
+  s.ts.push(now);
+
+  if (s.ts.length > RATE_MAX_PER_MIN) {
+    s.blockedUntil = now + RATE_BLOCK_MIN * 60_000;
+    rateState.set(wa_id, s);
     return { limited: true, reason: "too_many" };
   }
 
+  rateState.set(wa_id, s);
   return { limited: false };
 }
 
