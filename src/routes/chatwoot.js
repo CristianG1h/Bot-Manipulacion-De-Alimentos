@@ -19,19 +19,32 @@ setInterval(() => processedIds.clear(), 24 * 60 * 60 * 1000);
 const ADVISOR_TTL = 5 * 60; // 5 minutos en segundos
 const advisorKey  = (wa_id) => `advisor:${wa_id}`;
 
+async function isAdvisorMode(wa_id) {
+  try {
+    const val = await redis.get(advisorKey(wa_id));
+    return val === "1";
+  } catch (e) {
+    console.error("❌ Redis error:", e.message);
+    return false;
+  }
+}
+
 async function setAdvisorMode(wa_id) {
-  await redis.set(advisorKey(wa_id), "1", { ex: ADVISOR_TTL });
-  console.log(`👤 Modo asesor activado para ${wa_id}`);
+  try {
+    await redis.set(advisorKey(wa_id), "1", { ex: ADVISOR_TTL });
+    console.log(`👤 Modo asesor activado para ${wa_id}`);
+  } catch (e) {
+    console.error("❌ Redis error en setAdvisorMode:", e.message);
+  }
 }
 
 async function clearAdvisorMode(wa_id) {
-  await redis.del(advisorKey(wa_id));
-  console.log(`✅ Modo asesor desactivado para ${wa_id}`);
-}
-
-async function isAdvisorMode(wa_id) {
-  const val = await redis.get(advisorKey(wa_id));
-  return val === "1";
+  try {
+    await redis.del(advisorKey(wa_id));
+    console.log(`✅ Modo asesor desactivado para ${wa_id}`);
+  } catch (e) {
+    console.error("❌ Redis error en clearAdvisorMode:", e.message);
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
