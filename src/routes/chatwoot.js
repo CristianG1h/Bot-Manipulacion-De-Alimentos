@@ -212,4 +212,3 @@ async function sendCourseInfo(to) {
 }
 
 module.exports = router;
-module.exports = router;
