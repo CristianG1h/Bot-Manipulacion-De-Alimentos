@@ -13,10 +13,12 @@ app.use(express.json());
 app.use("/chatwoot", chatwootRouter);
 
 // Notificaciones de acceso
-app.use("/notify", notifyRouter);
+app.use("/notify",     notifyRouter);
+app.use("/api/notify", notifyRouter);
 
 // Certificados
-app.use("/certificate", certificateRouter);
+app.use("/certificate",        certificateRouter);
+app.use("/notify/certificate", certificateRouter);
 
 // Healthcheck
 app.get("/", (req, res) => res.status(200).send("OK"));
