@@ -24,7 +24,6 @@ El bot funciona como primer punto de contacto: responde saludos, entrega el inst
 ---
  
 ## 🏗️ Arquitectura
- 
 ```
 Usuario WhatsApp
       ↓
@@ -44,7 +43,6 @@ Chatwoot  ──────────────→  /chatwoot/webhook  (Ren
 ---
  
 ## 🔄 Flujo del Usuario
- 
 ```
 1. Usuario escribe al número empresarial
         ↓
@@ -89,6 +87,10 @@ Chatwoot  ──────────────→  /chatwoot/webhook  (Ren
 - Evita procesar el mismo mensaje dos veces (reintentos del webhook)
 - Se limpia automáticamente cada **24 horas**
 - Sin necesidad de base de datos
+
+### 🔒 Protección del webhook
+- El endpoint `/chatwoot/webhook` está protegido con token en la URL
+- Requests sin token válido reciben `401 Unauthorized`
  
 ### 📤 Notificaciones salientes
 - **`/notify/access`** — Envía plantilla de acceso al curso (`acceso_curso1`)
@@ -110,7 +112,6 @@ Chatwoot  ──────────────→  /chatwoot/webhook  (Ren
 ---
  
 ## 🗂️ Estructura del Proyecto
- 
 ```
 📦 Bot-Manipulacion-De-Alimentos
 ├── 📄 package.json
@@ -145,6 +146,7 @@ Configura estas variables en **Render → Environment**:
 | `COURSE_PASSWORD` | Contraseña del curso | ✅ |
 | `API_KEY_NOTIFY` | Clave para endpoints de notificación | ✅ |
 | `VERIFY_TOKEN` | Token de verificación del webhook | ✅ |
+| `CHATWOOT_WEBHOOK_TOKEN` | Token de seguridad del webhook | ✅ |
 | `GRAPH_VERSION` | Versión de Graph API (default: `v22.0`) | ⬜ |
 | `PORT` | Puerto del servidor (default: `3000`) | ⬜ |
  
@@ -156,15 +158,18 @@ Configura estas variables en **Render → Environment**:
 |---|---|---|
 | `GET` | `/` | Healthcheck |
 | `GET` | `/chatwoot/webhook` | Verificación Chatwoot |
-| `POST` | `/chatwoot/webhook` | Entrada de mensajes ⭐ |
+| `POST` | `/chatwoot/webhook?token=XXX` | Entrada de mensajes ⭐ |
 | `POST` | `/notify/access` | Enviar acceso al curso |
 | `POST` | `/notify/certificate` | Enviar certificado |
+| `POST` | `/certificate` | Enviar certificado (alias) |
  
 ---
  
 ## 🛡️ Seguridad
  
 - ✅ Tokens almacenados en variables de entorno (nunca en código)
+- ✅ Variables requeridas validadas al arranque — el servidor no inicia si falta alguna
+- ✅ Webhook protegido con token en URL (`CHATWOOT_WEBHOOK_TOKEN`)
 - ✅ Endpoints de notificación protegidos con `x-api-key`
 - ✅ Prevención de mensajes duplicados (deduplicación en memoria)
 - ✅ Protección anti-spam con rate limiting por usuario
@@ -191,6 +196,7 @@ Configura estas variables en **Render → Environment**:
 | Bot respondiendo mensajes | 🟢 Activo |
 | Modo asesor humano | 🟢 Activo |
 | Notificaciones salientes | 🟢 Activo |
+| Protección webhook | 🟢 Activo |
 | Base de datos | ⚪ No utilizada |
 | Anti-spam | 🟢 Activo |
  
@@ -209,4 +215,3 @@ Bogotá, Colombia
 *Desarrollado con ❤️ para VIP Salud Ocupacional*
  
 </div>
- 
