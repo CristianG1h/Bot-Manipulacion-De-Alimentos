@@ -33,5 +33,6 @@ async function sendText(to, bodyText) {
     text: { body: bodyText },
   });
 }
+console.log("META RESPONSE:", response.data);
 
 module.exports = { sendPayload, sendText };
