@@ -56,6 +56,21 @@ function extractButtonId(body) {
   return null;
 }
 
+function obtenerInboxIdDesdePayload(body) {
+  return (
+    body.inbox?.id ||
+    body.inbox_id ||
+    body.conversation?.inbox_id ||
+    body.conversation?.inbox?.id ||
+    body.message?.inbox_id ||
+    body.message?.inbox?.id ||
+    body.conversation?.meta?.inbox?.id ||
+    body.conversation?.contact_inbox?.inbox_id ||
+    body.contact_inbox?.inbox_id ||
+    null
+  );
+}
+
 // ─── Rutas ────────────────────────────────────────────────────────────────────
 router.get("/webhook", (req, res) => res.status(200).send("OK"));
 
@@ -75,6 +90,37 @@ router.post("/webhook", async (req, res) => {
     if (body.event !== "message_created") return;
     if (body.message_type !== "incoming") return;
     if (body.private === true)            return;
+
+    // ─────────────────────────────────────────────
+// FILTRO POR INBOX
+// Este bot SOLO debe responder mensajes del inbox del Curso de Alimentos.
+// Evita que responda cuando escriben al inbox de CRC.
+// ─────────────────────────────────────────────
+const expectedInboxId = Number(process.env.CHATWOOT_INBOX_ID || 0);
+const payloadInboxId = obtenerInboxIdDesdePayload(body);
+
+if (!expectedInboxId) {
+  console.log(
+    "❌ Falta configurar CHATWOOT_INBOX_ID en Render. Mensaje ignorado para evitar cruces entre bots."
+  );
+  return;
+}
+
+if (!payloadInboxId) {
+  console.log(
+    "⚠️ Webhook Chatwoot sin inbox_id claro. Mensaje ignorado para evitar mezclar canales."
+  );
+  return;
+}
+
+if (Number(payloadInboxId) !== expectedInboxId) {
+  console.log(
+    `⏭️ Mensaje ignorado por inbox diferente. Esperado: ${expectedInboxId}, recibido: ${payloadInboxId}`
+  );
+  return;
+}
+
+console.log("✅ Inbox correcto para Curso de Alimentos:", payloadInboxId);
 
     const rawPhone =
       body.meta?.sender?.phone_number ||
