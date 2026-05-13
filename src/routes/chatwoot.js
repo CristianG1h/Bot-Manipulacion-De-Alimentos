@@ -71,6 +71,47 @@ function obtenerInboxIdDesdePayload(body) {
   );
 }
 
+async function crearNotaPrivadaChatwoot(conversationId, contenido) {
+  try {
+    if (!conversationId || !contenido) return;
+
+    const baseUrl = (process.env.CHATWOOT_BASE_URL || "").replace(/\/+$/, "");
+    const accountId = process.env.CHATWOOT_ACCOUNT_ID;
+    const apiToken = process.env.CHATWOOT_API_TOKEN;
+
+    if (!baseUrl || !accountId || !apiToken) {
+      console.log("⚠️ No se creó nota privada: faltan variables CHATWOOT_*");
+      return;
+    }
+
+    const url = `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        api_access_token: apiToken,
+      },
+      body: JSON.stringify({
+        content: `🤖 *Respuesta del bot:*\n\n${contenido}`,
+        message_type: "outgoing",
+        private: true,
+      }),
+    });
+
+    const raw = await response.text();
+
+    if (!response.ok) {
+      console.log("⚠️ Error creando nota privada en Chatwoot:", response.status, raw);
+      return;
+    }
+
+    console.log("📝 Nota privada creada en Chatwoot");
+  } catch (error) {
+    console.error("❌ Error creando nota privada:", error.message);
+  }
+}
+
 // ─── Rutas ────────────────────────────────────────────────────────────────────
 router.get("/webhook", (req, res) => res.status(200).send("OK"));
 
@@ -154,12 +195,14 @@ console.log("✅ Inbox correcto para Curso de Alimentos:", payloadInboxId);
       processedIds.add(messageId);
     }
 
-    const buttonId = extractButtonId(body);
-    if (buttonId) {
-      console.log("🔘 Botón:", buttonId);
-      clearAdvisorMode(wa_id);
-      return await handleButton(wa_id, buttonId);
-    }
+    const conversationId = body.conversation?.id || body.conversation_id || null;
+
+const buttonId = extractButtonId(body);
+if (buttonId) {
+  console.log("🔘 Botón:", buttonId);
+  clearAdvisorMode(wa_id);
+  return await handleButton(wa_id, buttonId, conversationId);
+}
 
     if (advisorMode.has(wa_id)) {
       console.log(`🤐 ${wa_id} en modo asesor — bot silenciado`);
@@ -179,58 +222,64 @@ console.log("✅ Inbox correcto para Curso de Alimentos:", payloadInboxId);
 
     const saludos = ["hola", "buenas", "buenos días", "buen día", "buenas tardes",
                      "buenas noches", "inicio", "menu", "menú", "start", "hi", "hello", "👋"];
-    if (saludos.includes(t)) return await sendMainMenu(wa_id);
+    if (cursoKw.some(k => t.includes(k))) return await sendCourseInfo(wa_id, conversationId);
 
     const cursoKw = ["instructivo", "link", "enlace", "curso", "acceso", "contraseña", "clave"];
     if (cursoKw.some(k => t.includes(k))) return await sendCourseInfo(wa_id);
 
     console.log(`🤷 Mensaje no reconocido de ${wa_id}: "${rawText}"`);
     setAdvisorMode(wa_id);
-    await sendText(
-      wa_id,
-      "👋 Gracias por escribirnos.\n\n" +
-      "Un asesor revisará tu mensaje y te responderá en breve. 🙌\n\n" +
-      "Si deseas atención más rápida, comunícate al:\n" +
-      "📱 *313 401 0901*"
-    );
+    const msgAsesor =
+  "👋 Gracias por escribirnos.\n\n" +
+  "Un asesor revisará tu mensaje y te responderá en breve. 🙌\n\n" +
+  "Si deseas atención más rápida, comunícate al:\n" +
+  "📱 *313 401 0901*";
 
+await sendText(wa_id, msgAsesor);
+await crearNotaPrivadaChatwoot(conversationId, msgAsesor);
   } catch (error) {
     console.error("❌ Error en /chatwoot/webhook:", error);
   }
 });
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
-async function handleButton(wa_id, buttonId) {
-  if (buttonId === "ver_instructivo") return await sendCourseInfo(wa_id);
-
-  if (buttonId === "hablar_asesor") {
-    setAdvisorMode(wa_id);
-    await sendText(
-      wa_id,
-      "👤 *Atención personalizada*\n\n" +
-      "¡Listo! Un asesor se unirá a la conversación en breve. 🙌\n\n" +
-      "Si deseas atención más rápida, escríbenos al:\n" +
-      "📱 *313 401 0901*\n\n" +
-      "_Si no recibes respuesta en 5 minutos, el asistente automático retomará la conversación._"
-    );
-    return;
-  }
-
-  return await sendMainMenu(wa_id);
+async function handleButton(wa_id, buttonId, conversationId = null) {
+  if (buttonId === "ver_instructivo") return await sendCourseInfo(wa_id);if (buttonId === "ver_instructivo") {
+  return await sendCourseInfo(wa_id, conversationId);
 }
 
-async function sendMainMenu(to) {
-  return await sendPayload({
+  if (buttonId === "hablar_asesor") {
+  setAdvisorMode(wa_id);
+
+  const msgAsesor =
+    "👤 *Atención personalizada*\n\n" +
+    "¡Listo! Un asesor se unirá a la conversación en breve. 🙌\n\n" +
+    "Si deseas atención más rápida, escríbenos al:\n" +
+    "📱 *313 401 0901*\n\n" +
+    "_Si no recibes respuesta en 5 minutos, el asistente automático retomará la conversación._";
+
+  await sendText(wa_id, msgAsesor);
+  await crearNotaPrivadaChatwoot(conversationId, msgAsesor);
+  return;
+}
+
+  return await sendMainMenu(wa_id, conversationId);
+}
+
+async function sendMainMenu(to, conversationId = null) {
+  const menuText =
+    "✨ *VIP Salud Ocupacional*\n\n" +
+    "¡Hola! 👋 Bienvenido(a) al *Curso de Manipulación de Alimentos*.\n\n" +
+    "¿En qué te podemos ayudar?";
+
+  const result = await sendPayload({
     messaging_product: "whatsapp",
     to,
     type: "interactive",
     interactive: {
       type: "button",
       body: {
-        text:
-          "✨ *VIP Salud Ocupacional*\n\n" +
-          "¡Hola! 👋 Bienvenido(a) al *Curso de Manipulación de Alimentos*.\n\n" +
-          "¿En qué te podemos ayudar?",
+        text: menuText,
       },
       action: {
         buttons: [
@@ -240,9 +289,20 @@ async function sendMainMenu(to) {
       },
     },
   });
+
+  await crearNotaPrivadaChatwoot(
+    conversationId,
+    `${menuText}
+
+Botones enviados:
+1️⃣ 📄 Instructivo y link
+2️⃣ 💬 Hablar con asesor`
+  );
+
+  return result;
 }
 
-async function sendCourseInfo(to) {
+async function sendCourseInfo(to, conversationId = null) {
   const msg =
     "🎓 *Curso de Manipulación de Alimentos*\n\n" +
     "Aquí tienes el acceso para iniciar tu capacitación:\n\n" +
@@ -255,6 +315,7 @@ async function sendCourseInfo(to) {
     "Si tienes alguna dificultad, escríbenos y te ayudamos. 🙌";
 
   await sendText(to, msg);
+  await crearNotaPrivadaChatwoot(conversationId, msg);
 }
 
 module.exports = router;
