@@ -237,6 +237,14 @@ const saludos = [
   "👋",
 ];
 
+const recibidoKw = [
+  "ok, recibido",
+  "ok recibido",
+  "recibido",
+  "ok recivido",
+  "recivido",
+];
+
 const cursoKw = [
   "instructivo",
   "link",
@@ -251,6 +259,10 @@ const cursoKw = [
 
 if (saludos.includes(t)) {
   return await sendMainMenu(wa_id, conversationId);
+}
+
+if (recibidoKw.some((k) => t.includes(k))) {
+  return await sendRecibidoConfirmacion(wa_id, conversationId);
 }
 
 if (cursoKw.some((k) => t.includes(k))) {
@@ -343,6 +355,18 @@ async function sendCourseInfo(to, conversationId = null) {
     "4️⃣ Selecciona *Iniciar lección* y completa toda la capacitación.\n\n" +
     "5️⃣ Al finalizar podrás descargar tu *certificado* y demás documentos.\n\n" +
     "Si tienes alguna dificultad, escríbenos y te ayudamos. 🙌";
+
+  await sendText(to, msg);
+  await crearNotaPrivadaChatwoot(conversationId, msg);
+}
+
+async function sendRecibidoConfirmacion(to, conversationId = null) {
+  const msg =
+    "✨ *Perfecto, muchas gracias por confirmar* ✅\n\n" +
+    "🎓 Ya puedes iniciar tu curso de *Manipulación de Alimentos*.\n\n" +
+    "⏳ Te recomendamos realizarlo dentro de las próximas *24 horas* para que puedas avanzar sin demoras y descargar tu certificado a tiempo.\n\n" +
+    "💡 Si necesitas más tiempo o tienes algún inconveniente para ingresar, escríbenos por este mismo chat y con gusto te ayudamos.\n\n" +
+    "🙌 Estamos pendientes para apoyarte.";
 
   await sendText(to, msg);
   await crearNotaPrivadaChatwoot(conversationId, msg);
