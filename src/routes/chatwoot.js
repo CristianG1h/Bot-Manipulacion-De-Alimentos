@@ -220,12 +220,41 @@ if (buttonId) {
 
     const t = rawText.toLowerCase();
 
-    const saludos = ["hola", "buenas", "buenos días", "buen día", "buenas tardes",
-                     "buenas noches", "inicio", "menu", "menú", "start", "hi", "hello", "👋"];
-    if (cursoKw.some(k => t.includes(k))) return await sendCourseInfo(wa_id, conversationId);
+const saludos = [
+  "hola",
+  "buenas",
+  "buenos días",
+  "buen día",
+  "buenas tardes",
+  "buenas noches",
+  "inicio",
+  "menu",
+  "menú",
+  "start",
+  "hi",
+  "hello",
+  "👋",
+];
 
-    const cursoKw = ["instructivo", "link", "enlace", "curso", "acceso", "contraseña", "clave"];
-    if (cursoKw.some(k => t.includes(k))) return await sendCourseInfo(wa_id);
+const cursoKw = [
+  "instructivo",
+  "link",
+  "enlace",
+  "curso",
+  "acceso",
+  "contraseña",
+  "clave",
+  "usuario",
+  "certificado",
+];
+
+if (saludos.includes(t)) {
+  return await sendMainMenu(wa_id, conversationId);
+}
+
+if (cursoKw.some((k) => t.includes(k))) {
+  return await sendCourseInfo(wa_id, conversationId);
+}
 
     console.log(`🤷 Mensaje no reconocido de ${wa_id}: "${rawText}"`);
     setAdvisorMode(wa_id);
@@ -244,9 +273,9 @@ await crearNotaPrivadaChatwoot(conversationId, msgAsesor);
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 async function handleButton(wa_id, buttonId, conversationId = null) {
-  if (buttonId === "ver_instructivo") return await sendCourseInfo(wa_id);if (buttonId === "ver_instructivo") {
-  return await sendCourseInfo(wa_id, conversationId);
-}
+  if (buttonId === "ver_instructivo") {
+    return await sendCourseInfo(wa_id, conversationId);
+  }
 
   if (buttonId === "hablar_asesor") {
   setAdvisorMode(wa_id);
