@@ -77,7 +77,7 @@ async function crearNotaPrivadaChatwoot(conversationId, contenido) {
 
     const baseUrl = (process.env.CHATWOOT_BASE_URL || "").replace(/\/+$/, "");
     const accountId = process.env.CHATWOOT_ACCOUNT_ID;
-    const apiToken = process.env.CHATWOOT_API_TOKEN;
+    const apiToken = String(process.env.CHATWOOT_API_TOKEN || "").trim();
 
     if (!baseUrl || !accountId || !apiToken) {
       console.log("⚠️ No se creó nota privada: faltan variables CHATWOOT_*");
@@ -88,10 +88,11 @@ async function crearNotaPrivadaChatwoot(conversationId, contenido) {
 
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        api_access_token: apiToken,
-      },
+     headers: {
+  "Content-Type": "application/json",
+  api_access_token: apiToken,
+  "api-access-token": apiToken,
+},
       body: JSON.stringify({
         content: `🤖 *Respuesta del bot:*\n\n${contenido}`,
         message_type: "outgoing",
