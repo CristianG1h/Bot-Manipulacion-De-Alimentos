@@ -1011,6 +1011,84 @@ canvas {
     min-width: 100%;
   }
 }
+
+/* ─── Efecto hover elegante en tarjetas y paneles ───────────────────────── */
+
+.filter-card,
+.metric-card,
+.chart-card {
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.filter-card:hover,
+.metric-card:hover,
+.chart-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(96, 165, 250, 0.55);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.22),
+    0 0 0 1px rgba(59, 130, 246, 0.12),
+    0 0 28px rgba(59, 130, 246, 0.10);
+}
+
+/* Efecto especial para tarjetas de métricas */
+.metric-card:hover .metric-icon {
+  transform: scale(1.08);
+  box-shadow: 0 12px 28px rgba(59, 130, 246, 0.22);
+}
+
+.metric-icon {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+/* Inputs y dropdown también se resaltan */
+.input:hover,
+.custom-select-btn:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.10);
+}
+
+/* Tabla: resalta cada fila */
+tbody tr {
+  transition: background 0.15s ease;
+}
+
+tbody tr:hover td {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+/* Barras de palabras clave */
+.kw-row {
+  transition: transform 0.15s ease;
+}
+
+.kw-row:hover {
+  transform: translateX(4px);
+}
+
+.kw-row:hover .kw-fill {
+  filter: brightness(1.18);
+}
+
+/* En celular evita movimientos raros */
+@media (max-width: 768px) {
+  .filter-card:hover,
+  .metric-card:hover,
+  .chart-card:hover {
+    transform: none;
+  }
+
+  .kw-row:hover {
+    transform: none;
+  }
+}
     
   </style>
 </head>
