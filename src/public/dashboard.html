@@ -7,6 +7,7 @@
   <title>Dashboard · Bot Manipulación de Alimentos</title>
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
   <style>
     :root {
@@ -397,6 +398,126 @@
       display: none;
     }
 
+    /* ─── Calendario moderno Flatpickr ───────────────────────────── */
+.flatpickr-calendar {
+  background: #0f1b2d !important;
+  border: 1px solid rgba(96, 165, 250, .28) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .45) !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  color: #f8fafc !important;
+  font-family: "Segoe UI", system-ui, sans-serif !important;
+}
+
+.flatpickr-months {
+  background: #18263b !important;
+  border-bottom: 1px solid rgba(96, 165, 250, .16) !important;
+}
+
+.flatpickr-month,
+.flatpickr-current-month,
+.flatpickr-current-month input.cur-year {
+  color: #f8fafc !important;
+  fill: #f8fafc !important;
+}
+
+.flatpickr-prev-month,
+.flatpickr-next-month {
+  color: #9db7d8 !important;
+  fill: #9db7d8 !important;
+}
+
+.flatpickr-prev-month:hover,
+.flatpickr-next-month:hover {
+  color: #3b82f6 !important;
+  fill: #3b82f6 !important;
+}
+
+.flatpickr-weekdays {
+  background: #18263b !important;
+}
+
+span.flatpickr-weekday {
+  color: #9db7d8 !important;
+  font-weight: 800 !important;
+  font-size: 11px !important;
+}
+
+.flatpickr-day {
+  color: #dbeafe !important;
+  border-radius: 12px !important;
+  border: none !important;
+}
+
+.flatpickr-day:hover {
+  background: rgba(59, 130, 246, .18) !important;
+  color: #ffffff !important;
+}
+
+.flatpickr-day.today {
+  border: 1px solid #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 20px rgba(59, 130, 246, .35) !important;
+}
+
+.flatpickr-day.inRange {
+  background: rgba(59, 130, 246, .18) !important;
+  color: #ffffff !important;
+}
+
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay {
+  color: rgba(157, 183, 216, .35) !important;
+}
+
+.flatpickr-input[readonly] {
+  cursor: pointer;
+}
+
+/* Modo claro */
+.light .flatpickr-calendar {
+  background: #ffffff !important;
+  border: 1px solid rgba(37, 99, 235, .22) !important;
+  color: #122033 !important;
+}
+
+.light .flatpickr-months,
+.light .flatpickr-weekdays {
+  background: #f8fafc !important;
+}
+
+.light .flatpickr-month,
+.light .flatpickr-current-month,
+.light .flatpickr-current-month input.cur-year {
+  color: #122033 !important;
+}
+
+.light span.flatpickr-weekday {
+  color: #64748b !important;
+}
+
+.light .flatpickr-day {
+  color: #122033 !important;
+}
+
+.light .flatpickr-day:hover {
+  background: rgba(37, 99, 235, .12) !important;
+}
+
+.light .flatpickr-day.selected,
+.light .flatpickr-day.startRange,
+.light .flatpickr-day.endRange {
+  background: #2563eb !important;
+  color: white !important;
+}
+
     @media (max-width: 1000px) {
       .filter-grid,
       .charts-row,
@@ -470,12 +591,12 @@
 
         <div class="field custom-field hidden">
           <label>Desde</label>
-          <input id="fromInput" type="date" class="input" />
+          <input id="fromInput" type="text" class="input" placeholder="Seleccionar fecha" readonly />
         </div>
 
         <div class="field custom-field hidden">
           <label>Hasta</label>
-          <input id="toInput" type="date" class="input" />
+          <input id="toInput" type="text" class="input" placeholder="Seleccionar fecha" readonly />
         </div>
 
         <button class="btn" onclick="loadStats()">
@@ -630,6 +751,8 @@
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 
   <script>
     let isLight = false;
@@ -914,6 +1037,26 @@
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(loadStats, 500);
     });
+
+    flatpickr("#fromInput", {
+  locale: "es",
+  dateFormat: "Y-m-d",
+  altInput: true,
+  altFormat: "d/m/Y",
+  allowInput: false,
+  disableMobile: true,
+  onChange: loadStats,
+});
+
+flatpickr("#toInput", {
+  locale: "es",
+  dateFormat: "Y-m-d",
+  altInput: true,
+  altFormat: "d/m/Y",
+  allowInput: false,
+  disableMobile: true,
+  onChange: loadStats,
+});
 
     toggleCustomFields();
     loadStats();
