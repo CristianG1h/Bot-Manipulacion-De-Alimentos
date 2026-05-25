@@ -3,492 +3,893 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <title>Dashboard · Bot Manipulación de Alimentos</title>
+
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+
   <style>
     :root {
-      --bg: #0b1220;
-      --surface: #111827;
-      --card: #1a2438;
-      --border: rgba(99,179,237,0.15);
+      --bg: #07111f;
+      --surface: #0f1b2d;
+      --card: #18263b;
+      --border: rgba(96, 165, 250, .22);
+      --text: #f8fafc;
+      --muted: #9db7d8;
       --accent: #3b82f6;
-      --accent2: #60a5fa;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
-      --success: #34d399;
-      --warn: #fbbf24;
-      --danger: #f87171;
+      --green: #10b981;
+      --yellow: #fbbf24;
+      --red: #f87171;
       --purple: #a78bfa;
     }
+
     .light {
-      --bg: #f0f4f8;
+      --bg: #eef4fb;
       --surface: #ffffff;
       --card: #ffffff;
-      --border: rgba(59,130,246,0.18);
-      --accent: #2563eb;
-      --accent2: #3b82f6;
-      --text: #1e293b;
+      --border: rgba(37, 99, 235, .18);
+      --text: #122033;
       --muted: #64748b;
-      --success: #059669;
-      --warn: #d97706;
-      --danger: #dc2626;
+      --accent: #2563eb;
+      --green: #059669;
+      --yellow: #d97706;
+      --red: #dc2626;
       --purple: #7c3aed;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      transition: background 0.3s, color 0.3s;
-      min-height: 100vh;
+
+    * {
+      box-sizing: border-box;
     }
 
-    /* ── Topbar ── */
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(59, 130, 246, .16), transparent 28%),
+        var(--bg);
+      color: var(--text);
+    }
+
     .topbar {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 14px 28px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
       position: sticky;
       top: 0;
-      z-index: 100;
+      z-index: 10;
+      background: rgba(7, 17, 31, .88);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 28px;
     }
-    .brand { display: flex; align-items: center; gap: 12px; }
+
+    .light .topbar {
+      background: rgba(255, 255, 255, .9);
+    }
+
+    .topbar-inner {
+      max-width: 1240px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
     .brand-icon {
-      width: 38px; height: 38px;
-      background: var(--accent);
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #2563eb, #60a5fa);
+      box-shadow: 0 18px 40px rgba(37, 99, 235, .24);
     }
-    .brand-icon i { color: #fff; font-size: 20px; }
-    .brand-name { font-size: 15px; font-weight: 700; color: var(--text); }
-    .brand-sub { font-size: 11px; color: var(--muted); }
-    .topbar-right { display: flex; align-items: center; gap: 16px; }
-    .live-badge {
-      display: flex; align-items: center; gap: 6px;
-      background: rgba(52,211,153,0.1);
-      border: 1px solid rgba(52,211,153,0.3);
-      padding: 5px 12px; border-radius: 20px;
+
+    .brand-icon i {
+      color: white;
+      font-size: 24px;
     }
-    .live-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--success);
-      animation: blink 2s infinite;
+
+    .brand-title {
+      font-weight: 900;
+      font-size: 16px;
     }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    .live-label { font-size: 12px; color: var(--success); font-weight: 600; }
-    .toggle-btn {
-      background: var(--card);
+
+    .brand-sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge-live {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--green);
+      background: rgba(16, 185, 129, .11);
+      border: 1px solid rgba(16, 185, 129, .32);
+      padding: 7px 13px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--green);
+      animation: blink 1.7s infinite;
+    }
+
+    @keyframes blink {
+      50% { opacity: .35; }
+    }
+
+    button, input, select {
+      font-family: inherit;
+    }
+
+    .btn {
       border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 7px 16px;
+      background: var(--card);
+      color: var(--text);
+      padding: 9px 13px;
+      border-radius: 999px;
       cursor: pointer;
       font-size: 12px;
-      color: var(--muted);
-      display: flex; align-items: center; gap: 6px;
-      transition: all 0.2s;
+      font-weight: 700;
     }
-    .toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .uptime-text { font-size: 11px; color: var(--muted); }
 
-    /* ── Layout ── */
-    .content { padding: 24px 28px; max-width: 1200px; margin: 0 auto; }
+    .btn:hover {
+      border-color: var(--accent);
+    }
+
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px 20px 40px;
+    }
+
     .section-label {
-      font-size: 10px; font-weight: 700;
-      text-transform: uppercase; letter-spacing: 1.5px;
-      color: var(--muted); margin-bottom: 14px;
+      margin: 10px 0 14px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      font-weight: 900;
     }
 
-    /* ── Metric cards ── */
+    .filter-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 22px;
+      box-shadow: 0 22px 50px rgba(0, 0, 0, .14);
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: 1.5fr .8fr .7fr .7fr auto auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .field label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+    }
+
+    .input {
+      width: 100%;
+      height: 40px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, .42);
+      color: var(--text);
+      padding: 0 12px;
+      border-radius: 12px;
+      outline: none;
+    }
+
+    .light .input {
+      background: #f8fafc;
+    }
+
+    .input:focus {
+      border-color: var(--accent);
+    }
+
     .metrics-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 14px; margin-bottom: 28px;
+      gap: 14px;
+      margin-bottom: 14px;
     }
-    .metric-card {
-      background: var(--card);
+
+    .metrics-grid.second {
+      grid-template-columns: repeat(3, 1fr);
+      margin-bottom: 22px;
+    }
+
+    .metric-card, .chart-card {
+      background: linear-gradient(180deg, rgba(255,255,255,.035), transparent), var(--card);
       border: 1px solid var(--border);
-      border-radius: 14px; padding: 18px;
-      transition: border-color 0.2s, transform 0.15s;
-      cursor: default;
+      border-radius: 18px;
+      box-shadow: 0 22px 50px rgba(0, 0, 0, .15);
     }
-    .metric-card:hover { border-color: var(--accent); transform: translateY(-2px); }
-    .metric-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-    .metric-icon-wrap {
-      width: 38px; height: 38px; border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .metric-icon-wrap i { font-size: 20px; }
-    .metric-val { font-size: 28px; font-weight: 800; color: var(--text); line-height: 1; }
-    .metric-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
-    .metric-delta { font-size: 11px; margin-top: 10px; display: flex; align-items: center; gap: 4px; }
-    .up { color: var(--success); } .down { color: var(--danger); } .neutral { color: var(--muted); }
 
-    /* ── Chart cards ── */
-    .charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .metric-card {
+      padding: 18px;
+      min-height: 112px;
+    }
+
+    .metric-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .metric-val {
+      font-size: 32px;
+      font-weight: 950;
+      line-height: 1;
+    }
+
+    .metric-label {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric-foot {
+      margin-top: 12px;
+      color: var(--green);
+      font-size: 11px;
+    }
+
+    .metric-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+      background: rgba(59, 130, 246, .15);
+      color: var(--accent);
+    }
+
+    .charts-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .bottom-row {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 16px;
+    }
+
     .chart-card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 14px; padding: 22px;
+      padding: 22px;
+      min-height: 310px;
     }
-    .chart-title { font-size: 14px; font-weight: 700; color: var(--text); }
-    .chart-sub { font-size: 11px; color: var(--muted); margin-top: 2px; margin-bottom: 18px; }
 
-    /* ── Bottom row ── */
-    .bottom-row { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; }
-
-    /* ── Log table ── */
-    .log-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .log-table th {
-      text-align: left; padding: 6px 10px;
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
-      color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600;
+    .chart-title {
+      font-weight: 900;
+      font-size: 15px;
     }
-    .log-table td { padding: 10px 10px; border-bottom: 1px solid rgba(99,179,237,0.05); color: var(--text); }
-    .log-table tr:last-child td { border-bottom: none; }
-    .log-table tr:hover td { background: rgba(59,130,246,0.04); }
+
+    .chart-sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 5px;
+      margin-bottom: 18px;
+    }
+
+    .chart-box {
+      height: 230px;
+      position: relative;
+    }
+
+    .donut-box {
+      height: 220px;
+      position: relative;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th {
+      text-align: left;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: .9px;
+      text-transform: uppercase;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, .09);
+    }
+
     .badge {
-      display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 10px; font-weight: 700;
+      display: inline-block;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 900;
     }
-    .b-ok      { background: rgba(52,211,153,0.15); color: var(--success); }
-    .b-warn    { background: rgba(251,191,36,0.15);  color: var(--warn); }
-    .b-asesor  { background: rgba(99,179,237,0.15);  color: var(--accent2); }
-    .b-error   { background: rgba(248,113,113,0.15); color: var(--danger); }
 
-    /* ── Keyword bars ── */
-    .kw-row { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; font-size: 12px; }
-    .kw-label { width: 85px; color: var(--muted); text-align: right; flex-shrink: 0; }
-    .kw-track { flex: 1; height: 7px; background: rgba(99,179,237,0.1); border-radius: 4px; overflow: hidden; }
-    .kw-fill  { height: 100%; border-radius: 4px; transition: width 1.2s cubic-bezier(.4,0,.2,1); width: 0; }
-    .kw-count { width: 36px; color: var(--text); font-weight: 700; text-align: right; font-size: 12px; }
+    .b-ok { background: rgba(16, 185, 129, .13); color: var(--green); }
+    .b-warn { background: rgba(251, 191, 36, .13); color: var(--yellow); }
+    .b-error { background: rgba(248, 113, 113, .13); color: var(--red); }
+    .b-asesor { background: rgba(59, 130, 246, .14); color: #60a5fa; }
 
-    /* ── Donut legend ── */
-    .donut-wrap { display: flex; align-items: center; gap: 20px; }
-    .donut-legend { flex: 1; }
-    .dl-item { display: flex; align-items: center; gap: 8px; margin-bottom: 11px; font-size: 12px; }
-    .dl-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
-    .dl-label { color: var(--muted); flex: 1; }
-    .dl-val { font-weight: 700; color: var(--text); }
+    .kw-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 13px;
+      font-size: 12px;
+    }
 
-    /* ── Footer ── */
-    .footer { text-align: right; font-size: 11px; color: var(--muted); margin-top: 24px; padding-bottom: 20px; }
+    .kw-label {
+      width: 95px;
+      color: var(--muted);
+      text-align: right;
+    }
 
-    /* ── Responsive ── */
-    @media (max-width: 768px) {
-      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
-      .charts-row, .bottom-row { grid-template-columns: 1fr; }
-      .content { padding: 16px; }
+    .kw-track {
+      flex: 1;
+      height: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(96, 165, 250, .12);
+    }
+
+    .kw-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+      min-width: 0;
+    }
+
+    .kw-count {
+      width: 36px;
+      text-align: right;
+      font-weight: 900;
+    }
+
+    .footer {
+      margin-top: 22px;
+      text-align: right;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 1000px) {
+      .filter-grid,
+      .charts-row,
+      .bottom-row {
+        grid-template-columns: 1fr;
+      }
+
+      .metrics-grid,
+      .metrics-grid.second {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 560px) {
+      .metrics-grid,
+      .metrics-grid.second {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
     }
   </style>
 </head>
+
 <body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-icon">
+          <i class="ti ti-robot"></i>
+        </div>
+        <div>
+          <div class="brand-title">Bot Manipulación de Alimentos</div>
+          <div class="brand-sub">VIP Salud Ocupacional · Dashboard con filtros</div>
+        </div>
+      </div>
 
-<div class="topbar">
-  <div class="brand">
-    <div class="brand-icon"><i class="ti ti-robot"></i></div>
-    <div>
-      <div class="brand-name">Bot Manipulación de Alimentos</div>
-      <div class="brand-sub">VIP Salud Ocupacional · WhatsApp Dashboard</div>
+      <div class="top-actions">
+        <span style="font-size:12px;color:var(--muted)">Uptime: <strong id="uptimeVal">—</strong></span>
+        <div class="badge-live"><span class="dot"></span> En vivo</div>
+        <button class="btn" onclick="toggleTheme()" id="themeBtn">
+          <i class="ti ti-sun"></i> Modo claro
+        </button>
+      </div>
     </div>
-  </div>
-  <div class="topbar-right">
-    <span class="uptime-text">Uptime: <strong id="uptimeVal">—</strong></span>
-    <div class="live-badge">
-      <div class="live-dot"></div>
-      <span class="live-label">En vivo</span>
-    </div>
-    <button class="toggle-btn" onclick="toggleTheme()" id="themeBtn">
-      <i class="ti ti-sun"></i> Modo claro
-    </button>
-  </div>
-</div>
+  </header>
 
-<div class="content">
-  <div class="section-label" style="margin-top:8px">Métricas generales</div>
-  <div class="metrics-grid">
-    <div class="metric-card">
-      <div class="metric-top">
-        <div>
-          <div class="metric-val" id="m-conv">—</div>
-          <div class="metric-label">Conversaciones</div>
-        </div>
-        <div class="metric-icon-wrap" style="background:rgba(59,130,246,0.12)">
-          <i class="ti ti-message-circle" style="color:#3b82f6"></i>
-        </div>
-      </div>
-      <div class="metric-delta neutral"><i class="ti ti-info-circle" style="font-size:11px"></i> Esta sesión</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-top">
-        <div>
-          <div class="metric-val" id="m-msg">—</div>
-          <div class="metric-label">Mensajes enviados</div>
-        </div>
-        <div class="metric-icon-wrap" style="background:rgba(52,211,153,0.12)">
-          <i class="ti ti-send" style="color:#34d399"></i>
-        </div>
-      </div>
-      <div class="metric-delta up"><i class="ti ti-trending-up" style="font-size:11px"></i> WhatsApp Cloud API</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-top">
-        <div>
-          <div class="metric-val" id="m-acc">—</div>
-          <div class="metric-label">Accesos enviados</div>
-        </div>
-        <div class="metric-icon-wrap" style="background:rgba(251,191,36,0.12)">
-          <i class="ti ti-key" style="color:#fbbf24"></i>
-        </div>
-      </div>
-      <div class="metric-delta up"><i class="ti ti-trending-up" style="font-size:11px"></i> Plantilla acceso_curso1</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-top">
-        <div>
-          <div class="metric-val" id="m-cert">—</div>
-          <div class="metric-label">Certificados emitidos</div>
-        </div>
-        <div class="metric-icon-wrap" style="background:rgba(167,139,250,0.12)">
-          <i class="ti ti-award" style="color:#a78bfa"></i>
-        </div>
-      </div>
-      <div class="metric-delta up"><i class="ti ti-certificate" style="font-size:11px"></i> Plantilla certificado_aprobado_v1</div>
-    </div>
-  </div>
+  <main class="wrap">
+    <div class="section-label">Filtros de búsqueda</div>
 
-  <div class="metrics-grid" style="grid-template-columns:repeat(3,1fr); margin-bottom:28px">
-    <div class="metric-card">
-      <div class="metric-top">
-        <div>
-          <div class="metric-val" id="m-asesor" style="font-size:22px">—</div>
-          <div class="metric-label">Asesores activados</div>
+    <section class="filter-card">
+      <div class="filter-grid">
+        <div class="field">
+          <label>Buscar por número, palabra o evento</label>
+          <input id="qInput" class="input" placeholder="Ej: 573212340504, certificado, asesor, link..." />
         </div>
-        <div class="metric-icon-wrap" style="background:rgba(99,179,237,0.12)">
-          <i class="ti ti-user-check" style="color:#60a5fa"></i>
-        </div>
-      </div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-top">
-        <div>
-          <div class="metric-val" id="m-norec" style="font-size:22px">—</div>
-          <div class="metric-label">Mensajes no reconocidos</div>
-        </div>
-        <div class="metric-icon-wrap" style="background:rgba(248,113,113,0.12)">
-          <i class="ti ti-question-mark" style="color:#f87171"></i>
-        </div>
-      </div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-top">
-        <div>
-          <div class="metric-val" id="m-rate" style="font-size:22px">—</div>
-          <div class="metric-label">Rate limitados</div>
-        </div>
-        <div class="metric-icon-wrap" style="background:rgba(251,191,36,0.12)">
-          <i class="ti ti-shield-x" style="color:#fbbf24"></i>
-        </div>
-      </div>
-    </div>
-  </div>
 
-  <div class="charts-row">
-    <div class="chart-card">
-      <div class="chart-title">Actividad diaria — últimos 14 días</div>
-      <div class="chart-sub">Interacciones registradas por día</div>
-      <div style="position:relative;width:100%;height:220px">
-        <canvas id="lineChart"></canvas>
+        <div class="field">
+          <label>Fecha</label>
+          <select id="rangeSelect" class="input">
+            <option value="all">Todo</option>
+            <option value="today">Hoy</option>
+            <option value="7d">Últimos 7 días</option>
+            <option value="30d">Últimos 30 días</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </div>
+
+        <div class="field custom-field hidden">
+          <label>Desde</label>
+          <input id="fromInput" type="date" class="input" />
+        </div>
+
+        <div class="field custom-field hidden">
+          <label>Hasta</label>
+          <input id="toInput" type="date" class="input" />
+        </div>
+
+        <button class="btn" onclick="loadStats()">
+          <i class="ti ti-search"></i> Filtrar
+        </button>
+
+        <button class="btn" onclick="clearFilters()">
+          <i class="ti ti-x"></i> Limpiar
+        </button>
       </div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">Distribución de acciones</div>
-      <div class="chart-sub">Tipo de respuesta enviada</div>
-      <div class="donut-wrap">
-        <div style="position:relative;width:130px;height:130px;flex-shrink:0">
+    </section>
+
+    <div class="section-label">Métricas generales</div>
+
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-conv">0</div>
+            <div class="metric-label">Conversaciones</div>
+            <div class="metric-foot">Usuarios únicos filtrados</div>
+          </div>
+          <div class="metric-icon"><i class="ti ti-message-circle"></i></div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-rec">0</div>
+            <div class="metric-label">Mensajes recibidos</div>
+            <div class="metric-foot">Entradas del usuario</div>
+          </div>
+          <div class="metric-icon" style="color:var(--green);background:rgba(16,185,129,.14)">
+            <i class="ti ti-inbox"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-msg">0</div>
+            <div class="metric-label">Mensajes enviados</div>
+            <div class="metric-foot">Respuestas del bot</div>
+          </div>
+          <div class="metric-icon" style="color:var(--green);background:rgba(16,185,129,.14)">
+            <i class="ti ti-send"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-acc">0</div>
+            <div class="metric-label">Accesos enviados</div>
+            <div class="metric-foot">Plantilla acceso_curso1</div>
+          </div>
+          <div class="metric-icon" style="color:var(--yellow);background:rgba(251,191,36,.14)">
+            <i class="ti ti-key"></i>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="metrics-grid second">
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-cert">0</div>
+            <div class="metric-label">Certificados emitidos</div>
+          </div>
+          <div class="metric-icon" style="color:var(--purple);background:rgba(167,139,250,.14)">
+            <i class="ti ti-award"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-asesor">0</div>
+            <div class="metric-label">Asesores activados</div>
+          </div>
+          <div class="metric-icon">
+            <i class="ti ti-user-check"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-top">
+          <div>
+            <div class="metric-val" id="m-rate">0</div>
+            <div class="metric-label">Rate limitados</div>
+          </div>
+          <div class="metric-icon" style="color:var(--yellow);background:rgba(251,191,36,.14)">
+            <i class="ti ti-shield-x"></i>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Actividad diaria — últimos 14 días</div>
+        <div class="chart-sub">Interacciones registradas por día según el filtro aplicado</div>
+        <div class="chart-box">
+          <canvas id="lineChart"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">Distribución de acciones</div>
+        <div class="chart-sub">Tipos de respuesta enviada</div>
+        <div class="donut-box">
           <canvas id="donutChart"></canvas>
         </div>
-        <div class="donut-legend" id="donutLegend"></div>
       </div>
+    </section>
+
+    <section class="bottom-row">
+      <div class="chart-card">
+        <div class="chart-title">Últimas interacciones</div>
+        <div class="chart-sub">Resultados filtrados en tiempo real</div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Hora</th>
+              <th>Evento</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">Palabras clave detectadas</div>
+        <div class="chart-sub">Según filtro aplicado</div>
+        <div id="kwBars"></div>
+      </div>
+    </section>
+
+    <div class="footer">
+      Última actualización: <span id="lastUpdate">—</span>
+      · Iniciado: <span id="iniciadoEn">—</span>
+      · Persistencia: <span id="persistencia">—</span>
     </div>
-  </div>
+  </main>
 
-  <div class="bottom-row" style="margin-top:16px">
-    <div class="chart-card">
-      <div class="chart-title" style="margin-bottom:4px">Últimas interacciones</div>
-      <div class="chart-sub">Actividad en tiempo real</div>
-      <table class="log-table">
-        <thead>
-          <tr><th>Hora</th><th>Evento</th><th>Estado</th></tr>
-        </thead>
-        <tbody id="logBody"></tbody>
-      </table>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title" style="margin-bottom:4px">Palabras clave detectadas</div>
-      <div class="chart-sub">Total acumulado en esta sesión</div>
-      <div id="kwBars"></div>
-    </div>
-  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 
-  <div class="footer">
-    Última actualización: <span id="lastUpdate">—</span> &nbsp;·&nbsp;
-    Iniciado: <span id="iniciadoEn">—</span>
-  </div>
-</div>
+  <script>
+    let isLight = false;
+    let lineChart = null;
+    let donutChart = null;
+    let debounceTimer = null;
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script>
-  let isLight = false;
-  let lineChart = null, donutChart = null;
+    const kwColors = ["#3b82f6", "#10b981", "#fbbf24", "#a78bfa", "#f87171", "#60a5fa", "#fb923c"];
 
-  function toggleTheme() {
-    isLight = !isLight;
-    document.body.classList.toggle('light', isLight);
-    document.getElementById('themeBtn').innerHTML = isLight
-      ? '<i class="ti ti-moon"></i> Modo oscuro'
-      : '<i class="ti ti-sun"></i> Modo claro';
-    rebuildCharts(window._lastData);
-  }
+    function toggleTheme() {
+      isLight = !isLight;
+      document.body.classList.toggle("light", isLight);
 
-  function formatUptime(secs) {
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
-  }
+      document.getElementById("themeBtn").innerHTML = isLight
+        ? '<i class="ti ti-moon"></i> Modo oscuro'
+        : '<i class="ti ti-sun"></i> Modo claro';
 
-  function badgeClass(estado) {
-    return { ok: 'b-ok', warn: 'b-warn', asesor: 'b-asesor', error: 'b-error' }[estado] || 'b-ok';
-  }
-  function badgeLabel(estado) {
-    return { ok: 'OK', warn: 'Alerta', asesor: 'Asesor', error: 'Error' }[estado] || 'OK';
-  }
-
-  const kwColors = ['#3b82f6','#34d399','#fbbf24','#a78bfa','#f87171','#60a5fa','#fb923c'];
-
-  function rebuildCharts(data) {
-    if (!data) return;
-
-    const textColor = isLight ? '#64748b' : '#94a3b8';
-    const gridColor = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(99,179,237,0.07)';
-
-    // ── Líneas ──
-    if (lineChart) lineChart.destroy();
-    lineChart = new Chart(document.getElementById('lineChart'), {
-      type: 'line',
-      data: {
-        labels: data.actividadPorDia.map(d => d.label),
-        datasets: [{
-          label: 'Interacciones',
-          data: data.actividadPorDia.map(d => d.total),
-          borderColor: '#3b82f6',
-          backgroundColor: isLight ? 'rgba(59,130,246,0.07)' : 'rgba(59,130,246,0.12)',
-          borderWidth: 2, fill: true, tension: 0.4,
-          pointRadius: 4,
-          pointBackgroundColor: '#3b82f6',
-          pointBorderColor: isLight ? '#fff' : '#111827',
-          pointBorderWidth: 2,
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: textColor, font: { size: 10 }, maxRotation: 0 }, grid: { color: gridColor } },
-          y: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor }, beginAtZero: true }
-        }
+      if (window.lastData) {
+        renderCharts(window.lastData);
       }
+    }
+
+    function formatNumber(n) {
+      return Number(n || 0).toLocaleString("es-CO");
+    }
+
+    function formatUptime(seconds) {
+      seconds = Number(seconds || 0);
+
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+
+      if (h > 0) return `${h}h ${m}m`;
+      if (m > 0) return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+
+    function badgeClass(estado) {
+      return {
+        ok: "b-ok",
+        warn: "b-warn",
+        asesor: "b-asesor",
+        error: "b-error"
+      }[estado] || "b-ok";
+    }
+
+    function badgeLabel(estado) {
+      return {
+        ok: "OK",
+        warn: "Alerta",
+        asesor: "Asesor",
+        error: "Error"
+      }[estado] || "OK";
+    }
+
+    function buildQueryParams() {
+      const params = new URLSearchParams();
+
+      const q = document.getElementById("qInput").value.trim();
+      const range = document.getElementById("rangeSelect").value;
+      const from = document.getElementById("fromInput").value;
+      const to = document.getElementById("toInput").value;
+
+      if (q) params.set("q", q);
+      if (range) params.set("range", range);
+
+      if (range === "custom") {
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+      }
+
+      return params.toString();
+    }
+
+    function renderCharts(data) {
+      const textColor = isLight ? "#64748b" : "#9db7d8";
+      const gridColor = isLight ? "rgba(15,23,42,.08)" : "rgba(148,163,184,.09)";
+
+      if (lineChart) lineChart.destroy();
+
+      lineChart = new Chart(document.getElementById("lineChart"), {
+        type: "line",
+        data: {
+          labels: data.actividadPorDia.map(d => d.label),
+          datasets: [{
+            label: "Interacciones",
+            data: data.actividadPorDia.map(d => d.total),
+            borderColor: "#3b82f6",
+            backgroundColor: "rgba(59,130,246,.14)",
+            fill: true,
+            tension: .42,
+            borderWidth: 2,
+            pointRadius: 4,
+            pointBackgroundColor: "#3b82f6"
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: {
+              ticks: { color: textColor, font: { size: 10 } },
+              grid: { color: gridColor }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: { color: textColor, font: { size: 10 }, precision: 0 },
+              grid: { color: gridColor }
+            }
+          }
+        }
+      });
+
+      const totals = data.totales || {};
+
+      const donutData = [
+        { label: "Instructivo", val: data.keywords?.instructivo || 0, color: "#3b82f6" },
+        { label: "Acceso", val: totals.accesosEnviados || 0, color: "#10b981" },
+        { label: "Certificado", val: totals.certificadosEnviados || 0, color: "#a78bfa" },
+        { label: "Asesor", val: totals.asesoresActivados || 0, color: "#fbbf24" },
+        { label: "No reconocido", val: totals.mensajesNoReconocidos || 0, color: "#f87171" }
+      ].filter(x => x.val > 0);
+
+      if (donutChart) donutChart.destroy();
+
+      donutChart = new Chart(document.getElementById("donutChart"), {
+        type: "doughnut",
+        data: {
+          labels: donutData.length ? donutData.map(d => d.label) : ["Sin datos"],
+          datasets: [{
+            data: donutData.length ? donutData.map(d => d.val) : [1],
+            backgroundColor: donutData.length ? donutData.map(d => d.color) : ["rgba(148,163,184,.25)"],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "70%",
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: {
+                color: textColor,
+                boxWidth: 10,
+                usePointStyle: true
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderLogs(items) {
+      const body = document.getElementById("logBody");
+
+      if (!items || !items.length) {
+        body.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:22px">Sin resultados para este filtro</td></tr>';
+        return;
+      }
+
+      body.innerHTML = items.map(i => `
+        <tr>
+          <td style="color:var(--muted);white-space:nowrap">${i.hora || "—"}</td>
+          <td>${i.detalle || "—"}</td>
+          <td><span class="badge ${badgeClass(i.estado)}">${badgeLabel(i.estado)}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    function renderKeywords(keywords) {
+      const entries = Object.entries(keywords || {})
+        .filter(([, v]) => Number(v || 0) >= 0)
+        .sort((a, b) => Number(b[1]) - Number(a[1]));
+
+      const max = entries[0]?.[1] || 1;
+
+      document.getElementById("kwBars").innerHTML = entries.map(([key, val], index) => `
+        <div class="kw-row">
+          <div class="kw-label">${key}</div>
+          <div class="kw-track">
+            <div class="kw-fill" style="width:${Math.round((val / max) * 100)}%;background:${kwColors[index % kwColors.length]}"></div>
+          </div>
+          <div class="kw-count">${val}</div>
+        </div>
+      `).join("");
+    }
+
+    async function loadStats() {
+      try {
+        const query = buildQueryParams();
+        const url = query ? `/api/stats?${query}` : "/api/stats";
+
+        const res = await fetch(url, { cache: "no-store" });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        window.lastData = data;
+
+        document.getElementById("m-conv").textContent = formatNumber(data.totales.conversaciones);
+        document.getElementById("m-rec").textContent = formatNumber(data.totales.mensajesRecibidos);
+        document.getElementById("m-msg").textContent = formatNumber(data.totales.mensajesEnviados);
+        document.getElementById("m-acc").textContent = formatNumber(data.totales.accesosEnviados);
+        document.getElementById("m-cert").textContent = formatNumber(data.totales.certificadosEnviados);
+        document.getElementById("m-asesor").textContent = formatNumber(data.totales.asesoresActivados);
+        document.getElementById("m-rate").textContent = formatNumber(data.totales.rateLimitados);
+
+        document.getElementById("uptimeVal").textContent = formatUptime(data.uptime);
+        document.getElementById("iniciadoEn").textContent = new Date(data.iniciadoEn).toLocaleString("es-CO");
+        document.getElementById("lastUpdate").textContent = new Date().toLocaleTimeString("es-CO");
+        document.getElementById("persistencia").textContent = data.persistencia || "—";
+
+        renderCharts(data);
+        renderLogs(data.ultimasInteracciones);
+        renderKeywords(data.keywords);
+      } catch (error) {
+        console.error("Error cargando estadísticas:", error);
+      }
+    }
+
+    function clearFilters() {
+      document.getElementById("qInput").value = "";
+      document.getElementById("rangeSelect").value = "all";
+      document.getElementById("fromInput").value = "";
+      document.getElementById("toInput").value = "";
+      toggleCustomFields();
+      loadStats();
+    }
+
+    function toggleCustomFields() {
+      const range = document.getElementById("rangeSelect").value;
+      document.querySelectorAll(".custom-field").forEach(el => {
+        el.classList.toggle("hidden", range !== "custom");
+      });
+    }
+
+    document.getElementById("rangeSelect").addEventListener("change", () => {
+      toggleCustomFields();
+      loadStats();
     });
 
-    // ── Dona ──
-    const kws = data.keywords;
-    const donutData = [
-      { label: 'Instructivo', val: kws.instructivo, color: '#3b82f6' },
-      { label: 'Saludo/menú', val: kws.hola,        color: '#34d399' },
-      { label: 'Asesor',      val: kws.asesor,       color: '#fbbf24' },
-      { label: 'Certificado', val: kws.certificado,  color: '#a78bfa' },
-      { label: 'Recibido',    val: kws.recibido,     color: '#60a5fa' },
-    ].filter(d => d.val > 0);
+    document.getElementById("fromInput").addEventListener("change", loadStats);
+    document.getElementById("toInput").addEventListener("change", loadStats);
 
-    const total = donutData.reduce((s, d) => s + d.val, 0) || 1;
-
-    if (donutChart) donutChart.destroy();
-    donutChart = new Chart(document.getElementById('donutChart'), {
-      type: 'doughnut',
-      data: {
-        labels: donutData.map(d => d.label),
-        datasets: [{ data: donutData.map(d => d.val), backgroundColor: donutData.map(d => d.color), borderWidth: 0, borderRadius: 3 }]
-      },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '68%', plugins: { legend: { display: false } } }
+    document.getElementById("qInput").addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(loadStats, 500);
     });
 
-    document.getElementById('donutLegend').innerHTML = donutData.map(d =>
-      `<div class="dl-item">
-        <div class="dl-dot" style="background:${d.color}"></div>
-        <span class="dl-label">${d.label}</span>
-        <span class="dl-val">${Math.round(d.val / total * 100)}%</span>
-      </div>`
-    ).join('');
-  }
-
-  function renderLog(interacciones) {
-    const tbody = document.getElementById('logBody');
-    if (!interacciones.length) {
-      tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:20px">Sin interacciones aún</td></tr>';
-      return;
-    }
-    tbody.innerHTML = interacciones.map(i =>
-      `<tr>
-        <td style="color:var(--muted);font-size:11px;white-space:nowrap">${i.hora}</td>
-        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.detalle}</td>
-        <td><span class="badge ${badgeClass(i.estado)}">${badgeLabel(i.estado)}</span></td>
-      </tr>`
-    ).join('');
-  }
-
-  function renderKeywords(keywords) {
-    const entries = Object.entries(keywords).sort((a, b) => b[1] - a[1]);
-    const max = entries[0]?.[1] || 1;
-    document.getElementById('kwBars').innerHTML = entries.map(([k, v], i) =>
-      `<div class="kw-row">
-        <span class="kw-label">${k}</span>
-        <div class="kw-track"><div class="kw-fill" style="background:${kwColors[i % kwColors.length]}" data-pct="${Math.round(v/max*100)}"></div></div>
-        <span class="kw-count">${v}</span>
-      </div>`
-    ).join('');
-    setTimeout(() => {
-      document.querySelectorAll('.kw-fill').forEach(el => { el.style.width = el.dataset.pct + '%'; });
-    }, 100);
-  }
-
-  async function fetchStats() {
-    try {
-      const res = await fetch('/api/stats');
-      const data = await res.json();
-      window._lastData = data;
-
-      document.getElementById('m-conv').textContent  = data.totales.conversaciones.toLocaleString('es-CO');
-      document.getElementById('m-msg').textContent   = data.totales.mensajesEnviados.toLocaleString('es-CO');
-      document.getElementById('m-acc').textContent   = data.totales.accesosEnviados.toLocaleString('es-CO');
-      document.getElementById('m-cert').textContent  = data.totales.certificadosEnviados.toLocaleString('es-CO');
-      document.getElementById('m-asesor').textContent= data.totales.asesoresActivados.toLocaleString('es-CO');
-      document.getElementById('m-norec').textContent = data.totales.mensajesNoReconocidos.toLocaleString('es-CO');
-      document.getElementById('m-rate').textContent  = data.totales.rateLimitados.toLocaleString('es-CO');
-      document.getElementById('uptimeVal').textContent = formatUptime(data.uptime);
-      document.getElementById('iniciadoEn').textContent = new Date(data.iniciadoEn).toLocaleString('es-CO');
-      document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('es-CO');
-
-      rebuildCharts(data);
-      renderLog(data.ultimasInteracciones);
-      renderKeywords(data.keywords);
-    } catch (e) {
-      console.error('Error cargando stats:', e);
-    }
-  }
-
-  fetchStats();
-  setInterval(fetchStats, 15000); // Actualiza cada 15 segundos
-</script>
+    toggleCustomFields();
+    loadStats();
+    setInterval(loadStats, 15000);
+  </script>
 </body>
 </html>

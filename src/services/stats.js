@@ -11,7 +11,6 @@ try {
 const DATABASE_URL = process.env.DATABASE_URL;
 
 const DEFAULT_STATS = {
-  conversaciones: 0,
   contactosUnicos: [],
 
   mensajesRecibidos: 0,
@@ -39,7 +38,6 @@ const DEFAULT_STATS = {
 
   porHora: Array(24).fill(0),
   porDia: {},
-
   iniciadoEn: new Date().toISOString(),
 };
 
@@ -75,6 +73,33 @@ async function initDb() {
       );
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bot_events (
+        id BIGSERIAL PRIMARY KEY,
+        ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        fecha TEXT NOT NULL,
+        hora TEXT NOT NULL,
+        wa_id TEXT,
+        wa_mask TEXT,
+        tipo TEXT NOT NULL,
+        detalle TEXT NOT NULL,
+        estado TEXT NOT NULL DEFAULT 'ok',
+        keywords TEXT[] DEFAULT '{}'
+      );
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_bot_events_ts ON bot_events (ts DESC);
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_bot_events_wa_id ON bot_events (wa_id);
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_bot_events_tipo ON bot_events (tipo);
+    `);
+
     const result = await pool.query(
       "SELECT data FROM bot_stats WHERE id = $1 LIMIT 1",
       ["dashboard"]
@@ -87,41 +112,31 @@ async function initDb() {
       stats = {
         ...base,
         ...saved,
-
         contactosUnicos: Array.isArray(saved.contactosUnicos)
           ? saved.contactosUnicos
           : [],
-
         keywords: {
           ...base.keywords,
           ...(saved.keywords || {}),
         },
-
         porHora:
           Array.isArray(saved.porHora) && saved.porHora.length === 24
             ? saved.porHora
             : Array(24).fill(0),
-
         porDia: saved.porDia || {},
-
         ultimasInteracciones: Array.isArray(saved.ultimasInteracciones)
           ? saved.ultimasInteracciones
           : [],
-
         iniciadoEn: saved.iniciadoEn || new Date().toISOString(),
       };
-
-      // Si viene de una versión anterior donde conversaciones se contaba mal,
-      // desde ahora priorizamos contactos únicos.
-      if (Array.isArray(stats.contactosUnicos) && stats.contactosUnicos.length > 0) {
-        stats.conversaciones = stats.contactosUnicos.length;
-      }
 
       console.log("✅ Estadísticas cargadas desde PostgreSQL");
     } else {
       await saveStatsNow();
-      console.log("✅ Tabla de estadísticas creada en PostgreSQL");
+      console.log("✅ Estadísticas iniciales creadas en PostgreSQL");
     }
+
+    console.log("✅ Tabla bot_events lista para filtros");
   } catch (error) {
     console.error("❌ Error inicializando estadísticas en PostgreSQL:", error.message);
   }
@@ -156,14 +171,12 @@ async function saveStatsNow() {
 }
 
 function fechaBogotaKey(date = new Date()) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Bogota",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  });
-
-  return formatter.format(date);
+  }).format(date);
 }
 
 function horaBogota(date = new Date()) {
@@ -183,16 +196,16 @@ function fechaBogotaLabel(date = new Date()) {
   });
 }
 
+function normalizarWaId(value = "") {
+  return String(value || "").replace(/\D/g, "");
+}
+
 function maskPhone(value = "") {
-  const s = String(value || "").replace(/\D/g, "");
+  const s = normalizarWaId(value);
 
   if (!s) return "sin número";
 
   return `${s.slice(0, 6)}***${s.slice(-2)}`;
-}
-
-function normalizarWaId(value = "") {
-  return String(value || "").replace(/\D/g, "");
 }
 
 function registrarContactoUnico(waId) {
@@ -207,8 +220,6 @@ function registrarContactoUnico(waId) {
   if (!stats.contactosUnicos.includes(limpio)) {
     stats.contactosUnicos.push(limpio);
   }
-
-  stats.conversaciones = stats.contactosUnicos.length;
 }
 
 function sumarDiaYHora(ahora = new Date()) {
@@ -238,7 +249,60 @@ function sumarDiaYHora(ahora = new Date()) {
   }
 }
 
-function registrarInteraccion(tipo, detalle, estado = "ok") {
+function sumarKeyword(key) {
+  if (!key) return;
+  stats.keywords[key] = (stats.keywords[key] || 0) + 1;
+}
+
+function safeKeywords(arr = []) {
+  return Array.from(
+    new Set(
+      arr
+        .filter(Boolean)
+        .map((x) => String(x).trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+function registrarEventoDb({ waId, tipo, detalle, estado, keywords }) {
+  if (!pool) return;
+
+  const ahora = new Date();
+  const waClean = normalizarWaId(waId);
+  const fecha = fechaBogotaKey(ahora);
+  const hora = horaBogota(ahora);
+  const waMask = waClean ? maskPhone(waClean) : null;
+
+  pool
+    .query(
+      `
+      INSERT INTO bot_events (ts, fecha, hora, wa_id, wa_mask, tipo, detalle, estado, keywords)
+      VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)
+      `,
+      [
+        fecha,
+        hora,
+        waClean || null,
+        waMask,
+        String(tipo || "evento"),
+        String(detalle || "").slice(0, 250),
+        String(estado || "ok"),
+        safeKeywords(keywords),
+      ]
+    )
+    .catch((error) => {
+      console.error("❌ Error guardando evento en bot_events:", error.message);
+    });
+}
+
+function registrarInteraccion({
+  waId = "",
+  tipo = "evento",
+  detalle = "",
+  estado = "ok",
+  keywords = [],
+}) {
   const ahora = new Date();
 
   stats.ultimasInteracciones.unshift({
@@ -254,16 +318,11 @@ function registrarInteraccion(tipo, detalle, estado = "ok") {
   }
 
   sumarDiaYHora(ahora);
+  registrarEventoDb({ waId, tipo, detalle, estado, keywords });
   saveStatsSoon();
 }
 
-function sumarKeyword(key) {
-  if (!key) return;
-
-  stats.keywords[key] = (stats.keywords[key] || 0) + 1;
-}
-
-function actividadUltimos14Dias() {
+function actividadUltimos14DiasMemoria() {
   const dias = [];
 
   for (let i = 13; i >= 0; i--) {
@@ -282,42 +341,308 @@ function actividadUltimos14Dias() {
   return dias;
 }
 
+function buildDateFilter(query = {}) {
+  const range = String(query.range || "all");
+  const from = String(query.from || "");
+  const to = String(query.to || "");
+
+  let start = null;
+  let end = null;
+
+  const now = new Date();
+
+  if (range === "today") {
+    const key = fechaBogotaKey(now);
+    start = `${key}T00:00:00-05:00`;
+    end = `${key}T23:59:59-05:00`;
+  }
+
+  if (range === "7d") {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    start = `${fechaBogotaKey(d)}T00:00:00-05:00`;
+    end = `${fechaBogotaKey(now)}T23:59:59-05:00`;
+  }
+
+  if (range === "30d") {
+    const d = new Date();
+    d.setDate(d.getDate() - 29);
+    start = `${fechaBogotaKey(d)}T00:00:00-05:00`;
+    end = `${fechaBogotaKey(now)}T23:59:59-05:00`;
+  }
+
+  if (range === "custom" && from && to) {
+    start = `${from}T00:00:00-05:00`;
+    end = `${to}T23:59:59-05:00`;
+  }
+
+  return { start, end, range };
+}
+
+function buildWhere(query = {}) {
+  const params = [];
+  const where = [];
+
+  const { start, end } = buildDateFilter(query);
+
+  if (start && end) {
+    params.push(start);
+    where.push(`ts >= $${params.length}`);
+
+    params.push(end);
+    where.push(`ts <= $${params.length}`);
+  }
+
+  const q = String(query.q || "").trim();
+
+  if (q) {
+    const qClean = q.replace(/\D/g, "");
+    params.push(`%${q.toLowerCase()}%`);
+    const pText = `$${params.length}`;
+
+    if (qClean.length >= 4) {
+      params.push(`%${qClean}%`);
+      const pPhone = `$${params.length}`;
+
+      where.push(`(
+        LOWER(detalle) LIKE ${pText}
+        OR LOWER(tipo) LIKE ${pText}
+        OR LOWER(estado) LIKE ${pText}
+        OR EXISTS (
+          SELECT 1 FROM unnest(keywords) k WHERE LOWER(k) LIKE ${pText}
+        )
+        OR wa_id LIKE ${pPhone}
+      )`);
+    } else {
+      where.push(`(
+        LOWER(detalle) LIKE ${pText}
+        OR LOWER(tipo) LIKE ${pText}
+        OR LOWER(estado) LIKE ${pText}
+        OR EXISTS (
+          SELECT 1 FROM unnest(keywords) k WHERE LOWER(k) LIKE ${pText}
+        )
+      )`);
+    }
+  }
+
+  return {
+    sql: where.length ? `WHERE ${where.join(" AND ")}` : "",
+    params,
+  };
+}
+
+async function getSnapshotPostgres(query = {}) {
+  const { sql, params } = buildWhere(query);
+
+  const totalsResult = await pool.query(
+    `
+    SELECT
+      COUNT(DISTINCT wa_id) FILTER (WHERE wa_id IS NOT NULL AND tipo = 'mensaje_recibido')::int AS conversaciones,
+      COUNT(*) FILTER (WHERE tipo = 'mensaje_recibido')::int AS mensajes_recibidos,
+      COUNT(*) FILTER (WHERE tipo IN ('mensaje', 'whatsapp', 'menu', 'instructivo', 'recibido', 'asesor', 'acceso', 'certificado'))::int AS mensajes_enviados,
+      COUNT(*) FILTER (WHERE tipo = 'acceso')::int AS accesos_enviados,
+      COUNT(*) FILTER (WHERE tipo = 'certificado')::int AS certificados_enviados,
+      COUNT(*) FILTER (WHERE tipo = 'asesor')::int AS asesores_activados,
+      COUNT(*) FILTER (WHERE tipo = 'no_reconocido')::int AS mensajes_no_reconocidos,
+      COUNT(*) FILTER (WHERE tipo = 'duplicado')::int AS duplicados_ignorados,
+      COUNT(*) FILTER (WHERE tipo = 'rate_limit')::int AS rate_limitados,
+      COUNT(*) FILTER (WHERE tipo = 'meta_error')::int AS errores_meta
+    FROM bot_events
+    ${sql}
+    `,
+    params
+  );
+
+  const t = totalsResult.rows[0] || {};
+
+  const logsResult = await pool.query(
+    `
+    SELECT hora, tipo, detalle, estado, wa_mask, ts
+    FROM bot_events
+    ${sql}
+    ORDER BY ts DESC
+    LIMIT 50
+    `,
+    params
+  );
+
+  const daysResult = await pool.query(
+    `
+    SELECT fecha, COUNT(*)::int AS total
+    FROM bot_events
+    ${sql}
+    GROUP BY fecha
+    ORDER BY fecha ASC
+    `,
+    params
+  );
+
+  const daysMap = {};
+  for (const row of daysResult.rows) {
+    daysMap[row.fecha] = Number(row.total || 0);
+  }
+
+  const actividadPorDia = [];
+
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+
+    const key = fechaBogotaKey(d);
+
+    actividadPorDia.push({
+      fecha: key,
+      label: fechaBogotaLabel(d),
+      total: daysMap[key] || 0,
+    });
+  }
+
+  const keywordResult = await pool.query(
+    `
+    SELECT LOWER(k) AS keyword, COUNT(*)::int AS total
+    FROM bot_events, unnest(keywords) AS k
+    ${sql}
+    GROUP BY LOWER(k)
+    ORDER BY total DESC
+    LIMIT 20
+    `,
+    params
+  );
+
+  const keywords = {
+    instructivo: 0,
+    link: 0,
+    hola: 0,
+    certificado: 0,
+    contraseña: 0,
+    asesor: 0,
+    recibido: 0,
+    acceso: 0,
+  };
+
+  for (const row of keywordResult.rows) {
+    keywords[row.keyword] = Number(row.total || 0);
+  }
+
+  return {
+    totales: {
+      conversaciones: Number(t.conversaciones || 0),
+      mensajesRecibidos: Number(t.mensajes_recibidos || 0),
+      mensajesEnviados: Number(t.mensajes_enviados || 0),
+      accesosEnviados: Number(t.accesos_enviados || 0),
+      certificadosEnviados: Number(t.certificados_enviados || 0),
+      asesoresActivados: Number(t.asesores_activados || 0),
+      mensajesNoReconocidos: Number(t.mensajes_no_reconocidos || 0),
+      duplicadosIgnorados: Number(t.duplicados_ignorados || 0),
+      rateLimitados: Number(t.rate_limitados || 0),
+      erroresMeta: Number(t.errores_meta || 0),
+    },
+    ultimasInteracciones: logsResult.rows.map((r) => ({
+      hora: r.hora,
+      tipo: r.tipo,
+      detalle: r.detalle,
+      estado: r.estado,
+      wa_mask: r.wa_mask,
+      ts: r.ts,
+    })),
+    keywords,
+    actividadPorDia,
+    actividadPorHora: stats.porHora,
+    iniciadoEn: stats.iniciadoEn,
+    uptime: Math.floor(process.uptime()),
+    persistencia: "postgresql",
+    zonaHoraria: "America/Bogota",
+    filtros: {
+      q: query.q || "",
+      range: query.range || "all",
+      from: query.from || "",
+      to: query.to || "",
+    },
+  };
+}
+
+function getSnapshotMemoria(query = {}) {
+  const conversacionesReales = Array.isArray(stats.contactosUnicos)
+    ? stats.contactosUnicos.length
+    : 0;
+
+  return {
+    totales: {
+      conversaciones: conversacionesReales,
+      mensajesRecibidos: stats.mensajesRecibidos,
+      mensajesEnviados: stats.mensajesEnviados,
+      accesosEnviados: stats.accesosEnviados,
+      certificadosEnviados: stats.certificadosEnviados,
+      asesoresActivados: stats.asesoresActivados,
+      mensajesNoReconocidos: stats.mensajesNoReconocidos,
+      duplicadosIgnorados: stats.duplicadosIgnorados,
+      rateLimitados: stats.rateLimitados,
+      erroresMeta: stats.erroresMeta,
+    },
+    ultimasInteracciones: stats.ultimasInteracciones.slice(0, 20),
+    keywords: stats.keywords,
+    actividadPorDia: actividadUltimos14DiasMemoria(),
+    actividadPorHora: stats.porHora,
+    iniciadoEn: stats.iniciadoEn,
+    uptime: Math.floor(process.uptime()),
+    persistencia: "memoria",
+    zonaHoraria: "America/Bogota",
+    filtros: {
+      q: query.q || "",
+      range: query.range || "all",
+      from: query.from || "",
+      to: query.to || "",
+    },
+  };
+}
+
 const Stats = {
   mensajeRecibido(waId) {
     registrarContactoUnico(waId);
-
     stats.mensajesRecibidos++;
 
-    registrarInteraccion(
-      "mensaje_recibido",
-      `Nuevo mensaje de ${maskPhone(waId)}`,
-      "ok"
-    );
+    registrarInteraccion({
+      waId,
+      tipo: "mensaje_recibido",
+      detalle: `Nuevo mensaje de ${maskPhone(waId)}`,
+      estado: "ok",
+      keywords: [],
+    });
   },
 
   mensajeEnviado(tipo = "mensaje", detalle = "Mensaje enviado por WhatsApp") {
     stats.mensajesEnviados++;
 
-    registrarInteraccion(tipo, detalle, "ok");
+    registrarInteraccion({
+      tipo,
+      detalle,
+      estado: "ok",
+      keywords: [tipo],
+    });
   },
 
   metaError(detalle = "Error enviando mensaje a Meta") {
     stats.erroresMeta++;
 
-    registrarInteraccion("meta_error", detalle, "error");
+    registrarInteraccion({
+      tipo: "meta_error",
+      detalle,
+      estado: "error",
+      keywords: ["error", "meta"],
+    });
   },
 
   menuEnviado(waId) {
-    // Ya NO suma conversaciones aquí.
-    // Conversaciones ahora se cuenta por contactos únicos en mensajeRecibido().
     stats.mensajesEnviados++;
     sumarKeyword("hola");
 
-    registrarInteraccion(
-      "menu",
-      `Menú principal enviado a ${maskPhone(waId)}`,
-      "ok"
-    );
+    registrarInteraccion({
+      waId,
+      tipo: "menu",
+      detalle: `Menú principal enviado a ${maskPhone(waId)}`,
+      estado: "ok",
+      keywords: ["hola", "menu"],
+    });
   },
 
   instructivoEnviado(waId) {
@@ -325,22 +650,26 @@ const Stats = {
     sumarKeyword("instructivo");
     sumarKeyword("link");
 
-    registrarInteraccion(
-      "instructivo",
-      `Instructivo y link enviado a ${maskPhone(waId)}`,
-      "ok"
-    );
+    registrarInteraccion({
+      waId,
+      tipo: "instructivo",
+      detalle: `Instructivo y link enviado a ${maskPhone(waId)}`,
+      estado: "ok",
+      keywords: ["instructivo", "link", "curso"],
+    });
   },
 
   recibidoEnviado(waId) {
     stats.mensajesEnviados++;
     sumarKeyword("recibido");
 
-    registrarInteraccion(
-      "recibido",
-      `Confirmación enviada a ${maskPhone(waId)}`,
-      "ok"
-    );
+    registrarInteraccion({
+      waId,
+      tipo: "recibido",
+      detalle: `Confirmación enviada a ${maskPhone(waId)}`,
+      estado: "ok",
+      keywords: ["recibido"],
+    });
   },
 
   asesorActivado(waId) {
@@ -348,21 +677,25 @@ const Stats = {
     stats.asesoresActivados++;
     sumarKeyword("asesor");
 
-    registrarInteraccion(
-      "asesor",
-      `Asesor activado para ${maskPhone(waId)}`,
-      "asesor"
-    );
+    registrarInteraccion({
+      waId,
+      tipo: "asesor",
+      detalle: `Asesor activado para ${maskPhone(waId)}`,
+      estado: "asesor",
+      keywords: ["asesor"],
+    });
   },
 
   mensajeNoReconocido(waId, texto) {
     stats.mensajesNoReconocidos++;
 
-    registrarInteraccion(
-      "no_reconocido",
-      `No reconocido de ${maskPhone(waId)}: "${String(texto || "").slice(0, 50)}"`,
-      "warn"
-    );
+    registrarInteraccion({
+      waId,
+      tipo: "no_reconocido",
+      detalle: `No reconocido de ${maskPhone(waId)}: "${String(texto || "").slice(0, 50)}"`,
+      estado: "warn",
+      keywords: ["no_reconocido"],
+    });
   },
 
   accesoEnviado(nombre = "usuario") {
@@ -370,7 +703,12 @@ const Stats = {
     stats.accesosEnviados++;
     sumarKeyword("acceso");
 
-    registrarInteraccion("acceso", `Acceso enviado a ${nombre}`, "ok");
+    registrarInteraccion({
+      tipo: "acceso",
+      detalle: `Acceso enviado a ${nombre}`,
+      estado: "ok",
+      keywords: ["acceso"],
+    });
   },
 
   certificadoEnviado(nombre = "usuario") {
@@ -378,23 +716,35 @@ const Stats = {
     stats.certificadosEnviados++;
     sumarKeyword("certificado");
 
-    registrarInteraccion("certificado", `Certificado enviado a ${nombre}`, "ok");
+    registrarInteraccion({
+      tipo: "certificado",
+      detalle: `Certificado enviado a ${nombre}`,
+      estado: "ok",
+      keywords: ["certificado"],
+    });
   },
 
   duplicadoIgnorado(id = "") {
     stats.duplicadosIgnorados++;
 
-    registrarInteraccion("duplicado", `Duplicado ignorado ${id}`.trim(), "warn");
+    registrarInteraccion({
+      tipo: "duplicado",
+      detalle: `Duplicado ignorado ${id}`.trim(),
+      estado: "warn",
+      keywords: ["duplicado"],
+    });
   },
 
   rateLimitado(waId) {
     stats.rateLimitados++;
 
-    registrarInteraccion(
-      "rate_limit",
-      `Rate limit para ${maskPhone(waId)}`,
-      "warn"
-    );
+    registrarInteraccion({
+      waId,
+      tipo: "rate_limit",
+      detalle: `Rate limit para ${maskPhone(waId)}`,
+      estado: "warn",
+      keywords: ["rate_limit"],
+    });
   },
 
   resetStats() {
@@ -402,33 +752,12 @@ const Stats = {
     saveStatsSoon();
   },
 
-  getSnapshot() {
-    const conversacionesReales = Array.isArray(stats.contactosUnicos)
-      ? stats.contactosUnicos.length
-      : stats.conversaciones;
+  async getSnapshot(query = {}) {
+    if (pool) {
+      return await getSnapshotPostgres(query);
+    }
 
-    return {
-      totales: {
-        conversaciones: conversacionesReales,
-        mensajesRecibidos: stats.mensajesRecibidos,
-        mensajesEnviados: stats.mensajesEnviados,
-        accesosEnviados: stats.accesosEnviados,
-        certificadosEnviados: stats.certificadosEnviados,
-        asesoresActivados: stats.asesoresActivados,
-        mensajesNoReconocidos: stats.mensajesNoReconocidos,
-        duplicadosIgnorados: stats.duplicadosIgnorados,
-        rateLimitados: stats.rateLimitados,
-        erroresMeta: stats.erroresMeta,
-      },
-      ultimasInteracciones: stats.ultimasInteracciones.slice(0, 20),
-      keywords: stats.keywords,
-      actividadPorDia: actividadUltimos14Dias(),
-      actividadPorHora: stats.porHora,
-      iniciadoEn: stats.iniciadoEn,
-      uptime: Math.floor(process.uptime()),
-      persistencia: pool ? "postgresql" : "memoria",
-      zonaHoraria: "America/Bogota",
-    };
+    return getSnapshotMemoria(query);
   },
 };
 
