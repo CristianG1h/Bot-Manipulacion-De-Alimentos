@@ -138,8 +138,32 @@ async function saveStatsNow() {
   );
 }
 
-function hoyKey(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+function fechaBogotaKey(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  return formatter.format(date);
+}
+
+function horaBogota(date = new Date()) {
+  return date.toLocaleTimeString("es-CO", {
+    timeZone: "America/Bogota",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function fechaBogotaLabel(date = new Date()) {
+  return date.toLocaleDateString("es-CO", {
+    timeZone: "America/Bogota",
+    day: "2-digit",
+    month: "short",
+  });
 }
 
 function maskPhone(value = "") {
@@ -151,17 +175,25 @@ function maskPhone(value = "") {
 }
 
 function sumarDiaYHora(ahora = new Date()) {
-  const hora = ahora.getHours();
+  const hora = Number(
+    ahora.toLocaleTimeString("es-CO", {
+      timeZone: "America/Bogota",
+      hour: "2-digit",
+      hour12: false,
+    })
+  );
 
   stats.porHora[hora] = (stats.porHora[hora] || 0) + 1;
 
-  const key = hoyKey(ahora);
+  const key = fechaBogotaKey(ahora);
   stats.porDia[key] = (stats.porDia[key] || 0) + 1;
 
   const hace14 = Date.now() - 14 * 24 * 60 * 60 * 1000;
 
   for (const k of Object.keys(stats.porDia)) {
-    if (new Date(k).getTime() < hace14) {
+    const fecha = new Date(`${k}T00:00:00-05:00`).getTime();
+
+    if (fecha < hace14) {
       delete stats.porDia[k];
     }
   }
@@ -171,11 +203,7 @@ function registrarInteraccion(tipo, detalle, estado = "ok") {
   const ahora = new Date();
 
   stats.ultimasInteracciones.unshift({
-    hora: ahora.toLocaleTimeString("es-CO", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
+    hora: horaBogota(ahora),
     tipo,
     detalle: String(detalle || "").slice(0, 160),
     estado,
@@ -203,14 +231,11 @@ function actividadUltimos14Dias() {
     const d = new Date();
     d.setDate(d.getDate() - i);
 
-    const key = hoyKey(d);
+    const key = fechaBogotaKey(d);
 
     dias.push({
       fecha: key,
-      label: d.toLocaleDateString("es-CO", {
-        day: "2-digit",
-        month: "short",
-      }),
+      label: fechaBogotaLabel(d),
       total: stats.porDia[key] || 0,
     });
   }
@@ -316,6 +341,7 @@ const Stats = {
       iniciadoEn: stats.iniciadoEn,
       uptime: Math.floor(process.uptime()),
       persistencia: pool ? "postgresql" : "memoria",
+      zonaHoraria: "America/Bogota",
     };
   },
 };
