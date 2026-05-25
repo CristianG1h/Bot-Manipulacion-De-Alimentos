@@ -1,4 +1,4 @@
-     let isLight = false;
+    let isLight = false;
     let lineChart = null;
     let donutChart = null;
     let debounceTimer = null;
