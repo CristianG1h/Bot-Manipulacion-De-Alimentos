@@ -1,12 +1,14 @@
 "use strict";
- 
-// ─── Contadores en memoria ────────────────────────────────────────────────────
-// Se reinician al reiniciar el servidor. Para persistencia permanente
-// puedes guardar en un archivo JSON (ver comentario al final).
- 
-const stats = {
-  // Totales históricos de esta sesión
+
+const fs = require("fs");
+const path = require("path");
+
+const DATA_DIR = path.join(__dirname, "..", "..", "data");
+const DATA_FILE = path.join(DATA_DIR, "stats.json");
+
+const DEFAULT_STATS = {
   conversaciones: 0,
+  mensajesRecibidos: 0,
   mensajesEnviados: 0,
   accesosEnviados: 0,
   certificadosEnviados: 0,
@@ -14,11 +16,10 @@ const stats = {
   mensajesNoReconocidos: 0,
   duplicadosIgnorados: 0,
   rateLimitados: 0,
- 
-  // Log de últimas interacciones (máx 50)
+  erroresMeta: 0,
+
   ultimasInteracciones: [],
- 
-  // Conteo por keyword
+
   keywords: {
     instructivo: 0,
     link: 0,
@@ -27,151 +28,250 @@ const stats = {
     contraseña: 0,
     asesor: 0,
     recibido: 0,
+    acceso: 0,
   },
- 
-  // Actividad por hora del día (0-23)
+
   porHora: Array(24).fill(0),
- 
-  // Actividad por día (últimos 14 días) — clave: "YYYY-MM-DD"
   porDia: {},
- 
-  // Timestamp de inicio del servidor
+
   iniciadoEn: new Date().toISOString(),
 };
- 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
- 
-function hoyKey() {
-  return new Date().toISOString().slice(0, 10); // "2025-05-20"
+
+function getDefaultStats() {
+  return JSON.parse(JSON.stringify(DEFAULT_STATS));
 }
- 
+
+function cargarStats() {
+  try {
+    if (!fs.existsSync(DATA_FILE)) {
+      return getDefaultStats();
+    }
+
+    const raw = fs.readFileSync(DATA_FILE, "utf8");
+    const saved = raw ? JSON.parse(raw) : {};
+
+    const base = getDefaultStats();
+
+    return {
+      ...base,
+      ...saved,
+      keywords: {
+        ...base.keywords,
+        ...(saved.keywords || {}),
+      },
+      porHora:
+        Array.isArray(saved.porHora) && saved.porHora.length === 24
+          ? saved.porHora
+          : Array(24).fill(0),
+      porDia: saved.porDia || {},
+      ultimasInteracciones: Array.isArray(saved.ultimasInteracciones)
+        ? saved.ultimasInteracciones
+        : [],
+      iniciadoEn: saved.iniciadoEn || new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error("⚠️ No se pudieron cargar las estadísticas:", error.message);
+    return getDefaultStats();
+  }
+}
+
+const stats = cargarStats();
+
+let saveTimer = null;
+
+function guardarStatsSoon() {
+  clearTimeout(saveTimer);
+
+  saveTimer = setTimeout(() => {
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(DATA_FILE, JSON.stringify(stats, null, 2), "utf8");
+    } catch (error) {
+      console.error("⚠️ No se pudieron guardar las estadísticas:", error.message);
+    }
+  }, 300);
+}
+
+function hoyKey(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function maskPhone(value = "") {
+  const s = String(value || "").replace(/\D/g, "");
+
+  if (!s) return "sin número";
+
+  return `${s.slice(0, 6)}***${s.slice(-2)}`;
+}
+
+function sumarDiaYHora(ahora = new Date()) {
+  const hora = ahora.getHours();
+
+  stats.porHora[hora] = (stats.porHora[hora] || 0) + 1;
+
+  const key = hoyKey(ahora);
+  stats.porDia[key] = (stats.porDia[key] || 0) + 1;
+
+  const hace14 = Date.now() - 14 * 24 * 60 * 60 * 1000;
+
+  for (const k of Object.keys(stats.porDia)) {
+    if (new Date(k).getTime() < hace14) {
+      delete stats.porDia[k];
+    }
+  }
+}
+
 function registrarInteraccion(tipo, detalle, estado = "ok") {
   const ahora = new Date();
-  const entrada = {
-    hora: ahora.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+
+  stats.ultimasInteracciones.unshift({
+    hora: ahora.toLocaleTimeString("es-CO", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
     tipo,
-    detalle,
-    estado, // "ok" | "warn" | "asesor" | "error"
+    detalle: String(detalle || "").slice(0, 160),
+    estado,
     ts: ahora.getTime(),
-  };
-  stats.ultimasInteracciones.unshift(entrada);
+  });
+
   if (stats.ultimasInteracciones.length > 50) {
-    stats.ultimasInteracciones.pop();
+    stats.ultimasInteracciones = stats.ultimasInteracciones.slice(0, 50);
   }
- 
-  // Registrar actividad por hora y por día
-  stats.porHora[ahora.getHours()]++;
-  const key = hoyKey();
-  stats.porDia[key] = (stats.porDia[key] || 0) + 1;
- 
-  // Limpiar días más viejos de 14 días
-  const hace14 = Date.now() - 14 * 24 * 60 * 60 * 1000;
-  for (const k of Object.keys(stats.porDia)) {
-    if (new Date(k).getTime() < hace14) delete stats.porDia[k];
-  }
+
+  sumarDiaYHora(ahora);
+  guardarStatsSoon();
 }
- 
-// ─── API pública ──────────────────────────────────────────────────────────────
- 
+
+function sumarKeyword(key) {
+  if (!key) return;
+
+  stats.keywords[key] = (stats.keywords[key] || 0) + 1;
+}
+
+function actividadUltimos14Dias() {
+  const dias = [];
+
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+
+    const key = hoyKey(d);
+
+    dias.push({
+      fecha: key,
+      label: d.toLocaleDateString("es-CO", {
+        day: "2-digit",
+        month: "short",
+      }),
+      total: stats.porDia[key] || 0,
+    });
+  }
+
+  return dias;
+}
+
 const Stats = {
-  // Llamar cuando llega un mensaje nuevo (no duplicado)
-  mensajeRecibido(wa_id) {
-    registrarInteraccion("mensaje", `Nuevo mensaje de ${wa_id.slice(0,6)}***`, "ok");
+  mensajeRecibido(waId) {
+    stats.mensajesRecibidos++;
+    registrarInteraccion("mensaje_recibido", `Nuevo mensaje de ${maskPhone(waId)}`, "ok");
   },
- 
-  // Llamar cuando se envía menú principal
-  menuEnviado(wa_id) {
+
+  mensajeEnviado(tipo = "mensaje", detalle = "Mensaje enviado por WhatsApp") {
     stats.mensajesEnviados++;
+    registrarInteraccion(tipo, detalle, "ok");
+  },
+
+  metaError(detalle = "Error enviando mensaje a Meta") {
+    stats.erroresMeta++;
+    registrarInteraccion("meta_error", detalle, "error");
+  },
+
+  menuEnviado(waId) {
     stats.conversaciones++;
-    stats.keywords.hola++;
-    registrarInteraccion("menu", "Menú principal enviado", "ok");
-  },
- 
-  // Llamar cuando se envía instructivo/link del curso
-  instructivoEnviado(wa_id) {
     stats.mensajesEnviados++;
-    stats.keywords.instructivo++;
-    stats.keywords.link++;
-    registrarInteraccion("instructivo", "Instructivo y link enviado", "ok");
+    sumarKeyword("hola");
+    registrarInteraccion("menu", `Menú principal enviado a ${maskPhone(waId)}`, "ok");
   },
- 
-  // Llamar cuando se envía confirmación de recibido
-  recibidoEnviado(wa_id) {
+
+  instructivoEnviado(waId) {
     stats.mensajesEnviados++;
-    stats.keywords.recibido++;
-    registrarInteraccion("recibido", "Confirmación de recibido enviada", "ok");
+    sumarKeyword("instructivo");
+    sumarKeyword("link");
+    registrarInteraccion("instructivo", `Instructivo y link enviado a ${maskPhone(waId)}`, "ok");
   },
- 
-  // Llamar cuando se activa modo asesor
-  asesorActivado(wa_id) {
+
+  recibidoEnviado(waId) {
+    stats.mensajesEnviados++;
+    sumarKeyword("recibido");
+    registrarInteraccion("recibido", `Confirmación enviada a ${maskPhone(waId)}`, "ok");
+  },
+
+  asesorActivado(waId) {
     stats.mensajesEnviados++;
     stats.asesoresActivados++;
-    stats.keywords.asesor++;
-    registrarInteraccion("asesor", `Asesor activado para ${wa_id.slice(0,6)}***`, "asesor");
+    sumarKeyword("asesor");
+    registrarInteraccion("asesor", `Asesor activado para ${maskPhone(waId)}`, "asesor");
   },
- 
-  // Llamar cuando el mensaje no fue reconocido
-  mensajeNoReconocido(wa_id, texto) {
+
+  mensajeNoReconocido(waId, texto) {
     stats.mensajesNoReconocidos++;
-    registrarInteraccion("no_reconocido", `Msg no reconocido: "${texto.slice(0, 30)}"`, "warn");
+
+    registrarInteraccion(
+      "no_reconocido",
+      `No reconocido de ${maskPhone(waId)}: "${String(texto || "").slice(0, 50)}"`,
+      "warn"
+    );
   },
- 
-  // Llamar cuando se envía acceso al curso (ruta /notify/access)
-  accesoEnviado(nombre) {
+
+  accesoEnviado(nombre = "usuario") {
     stats.mensajesEnviados++;
     stats.accesosEnviados++;
+    sumarKeyword("acceso");
     registrarInteraccion("acceso", `Acceso enviado a ${nombre}`, "ok");
   },
- 
-  // Llamar cuando se envía certificado (ruta /certificate)
-  certificadoEnviado(nombre) {
+
+  certificadoEnviado(nombre = "usuario") {
     stats.mensajesEnviados++;
     stats.certificadosEnviados++;
-    stats.keywords.certificado++;
+    sumarKeyword("certificado");
     registrarInteraccion("certificado", `Certificado enviado a ${nombre}`, "ok");
   },
- 
-  // Llamar cuando se ignora duplicado
-  duplicadoIgnorado() {
+
+  duplicadoIgnorado(id = "") {
     stats.duplicadosIgnorados++;
+    registrarInteraccion("duplicado", `Duplicado ignorado ${id}`.trim(), "warn");
   },
- 
-  // Llamar cuando alguien es rate-limitado
-  rateLimitado(wa_id) {
+
+  rateLimitado(waId) {
     stats.rateLimitados++;
-    registrarInteraccion("rate_limit", `Rate limit: ${wa_id.slice(0,6)}***`, "warn");
+    registrarInteraccion("rate_limit", `Rate limit para ${maskPhone(waId)}`, "warn");
   },
- 
-  // Devuelve el snapshot completo para el dashboard
+
   getSnapshot() {
-    // Construir array de los últimos 14 días con sus valores
-    const dias = [];
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      const label = d.toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
-      dias.push({ fecha: key, label, total: stats.porDia[key] || 0 });
-    }
- 
     return {
       totales: {
         conversaciones: stats.conversaciones,
+        mensajesRecibidos: stats.mensajesRecibidos,
         mensajesEnviados: stats.mensajesEnviados,
         accesosEnviados: stats.accesosEnviados,
         certificadosEnviados: stats.certificadosEnviados,
         asesoresActivados: stats.asesoresActivados,
         mensajesNoReconocidos: stats.mensajesNoReconocidos,
+        duplicadosIgnorados: stats.duplicadosIgnorados,
         rateLimitados: stats.rateLimitados,
+        erroresMeta: stats.erroresMeta,
       },
       ultimasInteracciones: stats.ultimasInteracciones.slice(0, 20),
       keywords: stats.keywords,
-      actividadPorDia: dias,
+      actividadPorDia: actividadUltimos14Dias(),
       actividadPorHora: stats.porHora,
       iniciadoEn: stats.iniciadoEn,
       uptime: Math.floor(process.uptime()),
     };
   },
 };
- 
+
+module.exports = Stats;
 module.exports = Stats;
