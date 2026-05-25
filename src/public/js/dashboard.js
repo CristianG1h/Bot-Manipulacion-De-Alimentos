@@ -1,21 +1,4 @@
-let isLight = false;
-let lineChart = null;
-let donutChart = null;
-let debounceTimer = null;
-
-const kwColors = [
-  "#3b82f6",
-  "#10b981",
-  "#fbbf24",
-  "#a78bfa",
-  "#f87171",
-  "#60a5fa",
-  "#fb923c",
-  "#22c55e",
-  "#8b5cf6"
-];
-
-    let isLight = false;
+     let isLight = false;
     let lineChart = null;
     let donutChart = null;
     let debounceTimer = null;
