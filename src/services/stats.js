@@ -12,6 +12,8 @@ const DATABASE_URL = process.env.DATABASE_URL;
 
 const DEFAULT_STATS = {
   conversaciones: 0,
+  contactosUnicos: [],
+
   mensajesRecibidos: 0,
   mensajesEnviados: 0,
   accesosEnviados: 0,
@@ -85,20 +87,35 @@ async function initDb() {
       stats = {
         ...base,
         ...saved,
+
+        contactosUnicos: Array.isArray(saved.contactosUnicos)
+          ? saved.contactosUnicos
+          : [],
+
         keywords: {
           ...base.keywords,
           ...(saved.keywords || {}),
         },
+
         porHora:
           Array.isArray(saved.porHora) && saved.porHora.length === 24
             ? saved.porHora
             : Array(24).fill(0),
+
         porDia: saved.porDia || {},
+
         ultimasInteracciones: Array.isArray(saved.ultimasInteracciones)
           ? saved.ultimasInteracciones
           : [],
+
         iniciadoEn: saved.iniciadoEn || new Date().toISOString(),
       };
+
+      // Si viene de una versión anterior donde conversaciones se contaba mal,
+      // desde ahora priorizamos contactos únicos.
+      if (Array.isArray(stats.contactosUnicos) && stats.contactosUnicos.length > 0) {
+        stats.conversaciones = stats.contactosUnicos.length;
+      }
 
       console.log("✅ Estadísticas cargadas desde PostgreSQL");
     } else {
@@ -174,16 +191,38 @@ function maskPhone(value = "") {
   return `${s.slice(0, 6)}***${s.slice(-2)}`;
 }
 
-function sumarDiaYHora(ahora = new Date()) {
-  const hora = Number(
-    ahora.toLocaleTimeString("es-CO", {
-      timeZone: "America/Bogota",
-      hour: "2-digit",
-      hour12: false,
-    })
-  );
+function normalizarWaId(value = "") {
+  return String(value || "").replace(/\D/g, "");
+}
 
-  stats.porHora[hora] = (stats.porHora[hora] || 0) + 1;
+function registrarContactoUnico(waId) {
+  const limpio = normalizarWaId(waId);
+
+  if (!limpio) return;
+
+  if (!Array.isArray(stats.contactosUnicos)) {
+    stats.contactosUnicos = [];
+  }
+
+  if (!stats.contactosUnicos.includes(limpio)) {
+    stats.contactosUnicos.push(limpio);
+  }
+
+  stats.conversaciones = stats.contactosUnicos.length;
+}
+
+function sumarDiaYHora(ahora = new Date()) {
+  const horaTexto = ahora.toLocaleTimeString("es-CO", {
+    timeZone: "America/Bogota",
+    hour: "2-digit",
+    hour12: false,
+  });
+
+  const hora = Number(String(horaTexto).replace(/\D/g, ""));
+
+  if (!Number.isNaN(hora) && hora >= 0 && hora <= 23) {
+    stats.porHora[hora] = (stats.porHora[hora] || 0) + 1;
+  }
 
   const key = fechaBogotaKey(ahora);
   stats.porDia[key] = (stats.porDia[key] || 0) + 1;
@@ -245,45 +284,75 @@ function actividadUltimos14Dias() {
 
 const Stats = {
   mensajeRecibido(waId) {
+    registrarContactoUnico(waId);
+
     stats.mensajesRecibidos++;
-    registrarInteraccion("mensaje_recibido", `Nuevo mensaje de ${maskPhone(waId)}`, "ok");
+
+    registrarInteraccion(
+      "mensaje_recibido",
+      `Nuevo mensaje de ${maskPhone(waId)}`,
+      "ok"
+    );
   },
 
   mensajeEnviado(tipo = "mensaje", detalle = "Mensaje enviado por WhatsApp") {
     stats.mensajesEnviados++;
+
     registrarInteraccion(tipo, detalle, "ok");
   },
 
   metaError(detalle = "Error enviando mensaje a Meta") {
     stats.erroresMeta++;
+
     registrarInteraccion("meta_error", detalle, "error");
   },
 
   menuEnviado(waId) {
-    stats.conversaciones++;
+    // Ya NO suma conversaciones aquí.
+    // Conversaciones ahora se cuenta por contactos únicos en mensajeRecibido().
     stats.mensajesEnviados++;
     sumarKeyword("hola");
-    registrarInteraccion("menu", `Menú principal enviado a ${maskPhone(waId)}`, "ok");
+
+    registrarInteraccion(
+      "menu",
+      `Menú principal enviado a ${maskPhone(waId)}`,
+      "ok"
+    );
   },
 
   instructivoEnviado(waId) {
     stats.mensajesEnviados++;
     sumarKeyword("instructivo");
     sumarKeyword("link");
-    registrarInteraccion("instructivo", `Instructivo y link enviado a ${maskPhone(waId)}`, "ok");
+
+    registrarInteraccion(
+      "instructivo",
+      `Instructivo y link enviado a ${maskPhone(waId)}`,
+      "ok"
+    );
   },
 
   recibidoEnviado(waId) {
     stats.mensajesEnviados++;
     sumarKeyword("recibido");
-    registrarInteraccion("recibido", `Confirmación enviada a ${maskPhone(waId)}`, "ok");
+
+    registrarInteraccion(
+      "recibido",
+      `Confirmación enviada a ${maskPhone(waId)}`,
+      "ok"
+    );
   },
 
   asesorActivado(waId) {
     stats.mensajesEnviados++;
     stats.asesoresActivados++;
     sumarKeyword("asesor");
-    registrarInteraccion("asesor", `Asesor activado para ${maskPhone(waId)}`, "asesor");
+
+    registrarInteraccion(
+      "asesor",
+      `Asesor activado para ${maskPhone(waId)}`,
+      "asesor"
+    );
   },
 
   mensajeNoReconocido(waId, texto) {
@@ -300,6 +369,7 @@ const Stats = {
     stats.mensajesEnviados++;
     stats.accesosEnviados++;
     sumarKeyword("acceso");
+
     registrarInteraccion("acceso", `Acceso enviado a ${nombre}`, "ok");
   },
 
@@ -307,23 +377,39 @@ const Stats = {
     stats.mensajesEnviados++;
     stats.certificadosEnviados++;
     sumarKeyword("certificado");
+
     registrarInteraccion("certificado", `Certificado enviado a ${nombre}`, "ok");
   },
 
   duplicadoIgnorado(id = "") {
     stats.duplicadosIgnorados++;
+
     registrarInteraccion("duplicado", `Duplicado ignorado ${id}`.trim(), "warn");
   },
 
   rateLimitado(waId) {
     stats.rateLimitados++;
-    registrarInteraccion("rate_limit", `Rate limit para ${maskPhone(waId)}`, "warn");
+
+    registrarInteraccion(
+      "rate_limit",
+      `Rate limit para ${maskPhone(waId)}`,
+      "warn"
+    );
+  },
+
+  resetStats() {
+    stats = getDefaultStats();
+    saveStatsSoon();
   },
 
   getSnapshot() {
+    const conversacionesReales = Array.isArray(stats.contactosUnicos)
+      ? stats.contactosUnicos.length
+      : stats.conversaciones;
+
     return {
       totales: {
-        conversaciones: stats.conversaciones,
+        conversaciones: conversacionesReales,
         mensajesRecibidos: stats.mensajesRecibidos,
         mensajesEnviados: stats.mensajesEnviados,
         accesosEnviados: stats.accesosEnviados,
