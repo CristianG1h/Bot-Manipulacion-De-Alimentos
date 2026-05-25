@@ -570,11 +570,11 @@
       <div class="metric-card">
         <div class="metric-top">
           <div>
-            <div class="metric-val" id="m-rate">0</div>
-            <div class="metric-label">Rate limitados</div>
+            <div class="metric-val" id="m-norec">0</div>
+            <div class="metric-label">Mensajes no reconocidos</div>
           </div>
-          <div class="metric-icon" style="color:var(--yellow);background:rgba(251,191,36,.14)">
-            <i class="ti ti-shield-x"></i>
+          <div class="metric-icon" style="color:var(--red);background:rgba(248,113,113,.14)">
+            <i class="ti ti-question-mark"></i>
           </div>
         </div>
       </div>
@@ -590,8 +590,8 @@
       </div>
 
       <div class="chart-card">
-        <div class="chart-title">Distribución de acciones</div>
-        <div class="chart-sub">Tipos de respuesta enviada</div>
+        <div class="chart-title">Distribución de palabras clave</div>
+        <div class="chart-sub">Acciones detectadas según el filtro aplicado</div>
         <div class="donut-box">
           <canvas id="donutChart"></canvas>
         </div>
@@ -637,7 +637,17 @@
     let donutChart = null;
     let debounceTimer = null;
 
-    const kwColors = ["#3b82f6", "#10b981", "#fbbf24", "#a78bfa", "#f87171", "#60a5fa", "#fb923c"];
+    const kwColors = [
+      "#3b82f6",
+      "#10b981",
+      "#fbbf24",
+      "#a78bfa",
+      "#f87171",
+      "#60a5fa",
+      "#fb923c",
+      "#22c55e",
+      "#8b5cf6"
+    ];
 
     function toggleTheme() {
       isLight = !isLight;
@@ -705,107 +715,105 @@
       return params.toString();
     }
 
-   function renderCharts(data) {
-  const textColor = isLight ? "#64748b" : "#9db7d8";
-  const gridColor = isLight ? "rgba(15,23,42,.08)" : "rgba(148,163,184,.09)";
+    function renderCharts(data) {
+      const textColor = isLight ? "#64748b" : "#9db7d8";
+      const gridColor = isLight ? "rgba(15,23,42,.08)" : "rgba(148,163,184,.09)";
 
-  if (lineChart) lineChart.destroy();
+      if (lineChart) lineChart.destroy();
 
-  lineChart = new Chart(document.getElementById("lineChart"), {
-    type: "line",
-    data: {
-      labels: data.actividadPorDia.map(d => d.label),
-      datasets: [{
-        label: "Interacciones",
-        data: data.actividadPorDia.map(d => d.total),
-        borderColor: "#3b82f6",
-        backgroundColor: "rgba(59,130,246,.14)",
-        fill: true,
-        tension: .42,
-        borderWidth: 2,
-        pointRadius: 4,
-        pointBackgroundColor: "#3b82f6"
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false }
-      },
-      scales: {
-        x: {
-          ticks: { color: textColor, font: { size: 10 } },
-          grid: { color: gridColor }
+      lineChart = new Chart(document.getElementById("lineChart"), {
+        type: "line",
+        data: {
+          labels: data.actividadPorDia.map(d => d.label),
+          datasets: [{
+            label: "Interacciones",
+            data: data.actividadPorDia.map(d => d.total),
+            borderColor: "#3b82f6",
+            backgroundColor: "rgba(59,130,246,.14)",
+            fill: true,
+            tension: .42,
+            borderWidth: 2,
+            pointRadius: 4,
+            pointBackgroundColor: "#3b82f6"
+          }]
         },
-        y: {
-          beginAtZero: true,
-          ticks: { color: textColor, font: { size: 10 }, precision: 0 },
-          grid: { color: gridColor }
-        }
-      }
-    }
-  });
-
-  const totals = data.totales || {};
-  const kws = data.keywords || {};
-
-  // Aquí corregimos la dona para que tome TODAS las acciones reales
-  const donutData = [
-    { label: "Mensajes recibidos", val: totals.mensajesRecibidos || 0, color: "#60a5fa" },
-    { label: "Menú", val: kws.menu || kws.hola || 0, color: "#3b82f6" },
-    { label: "Instructivo", val: kws.instructivo || 0, color: "#10b981" },
-    { label: "Link", val: kws.link || 0, color: "#22c55e" },
-    { label: "Recibido", val: kws.recibido || 0, color: "#a78bfa" },
-    { label: "Acceso", val: totals.accesosEnviados || kws.acceso || 0, color: "#fbbf24" },
-    { label: "Certificado", val: totals.certificadosEnviados || kws.certificado || 0, color: "#8b5cf6" },
-    { label: "Asesor", val: totals.asesoresActivados || kws.asesor || 0, color: "#fb923c" },
-    { label: "No reconocido", val: totals.mensajesNoReconocidos || 0, color: "#f87171" },
-    { label: "Rate limit", val: totals.rateLimitados || 0, color: "#ef4444" }
-  ].filter(x => Number(x.val || 0) > 0);
-
-  if (donutChart) donutChart.destroy();
-
-  donutChart = new Chart(document.getElementById("donutChart"), {
-    type: "doughnut",
-    data: {
-      labels: donutData.length ? donutData.map(d => d.label) : ["Sin datos"],
-      datasets: [{
-        data: donutData.length ? donutData.map(d => Number(d.val || 0)) : [1],
-        backgroundColor: donutData.length
-          ? donutData.map(d => d.color)
-          : ["rgba(148,163,184,.25)"],
-        borderWidth: 0
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: "70%",
-      plugins: {
-        legend: {
-          position: "bottom",
-          labels: {
-            color: textColor,
-            boxWidth: 10,
-            usePointStyle: true
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const label = context.label || "";
-              const value = context.raw || 0;
-              const total = context.dataset.data.reduce((a, b) => Number(a) + Number(b), 0);
-              const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-              return `${label}: ${value} (${pct}%)`;
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: {
+              ticks: { color: textColor, font: { size: 10 } },
+              grid: { color: gridColor }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: { color: textColor, font: { size: 10 }, precision: 0 },
+              grid: { color: gridColor }
             }
           }
         }
-      }
+      });
+
+      const totals = data.totales || {};
+      const kws = data.keywords || {};
+
+      // Dona: solo acciones/palabras clave. No incluye "mensajes recibidos".
+      const donutData = [
+        { label: "Hola / Menú", val: kws.menu || kws.hola || 0, color: "#3b82f6" },
+        { label: "Instructivo", val: kws.instructivo || 0, color: "#10b981" },
+        { label: "Link", val: kws.link || 0, color: "#22c55e" },
+        { label: "Recibido", val: kws.recibido || 0, color: "#a78bfa" },
+        { label: "Acceso", val: totals.accesosEnviados || kws.acceso || 0, color: "#fbbf24" },
+        { label: "Certificado", val: totals.certificadosEnviados || kws.certificado || 0, color: "#8b5cf6" },
+        { label: "Asesor", val: totals.asesoresActivados || kws.asesor || 0, color: "#fb923c" },
+        { label: "No reconocido", val: totals.mensajesNoReconocidos || 0, color: "#f87171" }
+      ].filter(x => Number(x.val || 0) > 0);
+
+      if (donutChart) donutChart.destroy();
+
+      donutChart = new Chart(document.getElementById("donutChart"), {
+        type: "doughnut",
+        data: {
+          labels: donutData.length ? donutData.map(d => d.label) : ["Sin datos"],
+          datasets: [{
+            data: donutData.length ? donutData.map(d => Number(d.val || 0)) : [1],
+            backgroundColor: donutData.length
+              ? donutData.map(d => d.color)
+              : ["rgba(148,163,184,.25)"],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "70%",
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: {
+                color: textColor,
+                boxWidth: 10,
+                usePointStyle: true
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || "";
+                  const value = Number(context.raw || 0);
+                  const total = context.dataset.data.reduce((a, b) => Number(a) + Number(b), 0);
+                  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+                  return `${label}: ${value} (${pct}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
     }
-  });
-}
 
     function renderLogs(items) {
       const body = document.getElementById("logBody");
@@ -863,7 +871,7 @@
         document.getElementById("m-acc").textContent = formatNumber(data.totales.accesosEnviados);
         document.getElementById("m-cert").textContent = formatNumber(data.totales.certificadosEnviados);
         document.getElementById("m-asesor").textContent = formatNumber(data.totales.asesoresActivados);
-        document.getElementById("m-rate").textContent = formatNumber(data.totales.rateLimitados);
+        document.getElementById("m-norec").textContent = formatNumber(data.totales.mensajesNoReconocidos);
 
         document.getElementById("uptimeVal").textContent = formatUptime(data.uptime);
         document.getElementById("iniciadoEn").textContent = new Date(data.iniciadoEn).toLocaleString("es-CO");
