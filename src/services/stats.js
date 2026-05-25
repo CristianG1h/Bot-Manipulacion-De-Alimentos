@@ -1,10 +1,14 @@
 "use strict";
 
-const fs = require("fs");
-const path = require("path");
+let Pool = null;
 
-const DATA_DIR = path.join(__dirname, "..", "..", "data");
-const DATA_FILE = path.join(DATA_DIR, "stats.json");
+try {
+  Pool = require("pg").Pool;
+} catch {
+  console.warn("⚠️ Paquete pg no instalado. Stats funcionará solo en memoria.");
+}
+
+const DATABASE_URL = process.env.DATABASE_URL;
 
 const DEFAULT_STATS = {
   conversaciones: 0,
@@ -41,55 +45,97 @@ function getDefaultStats() {
   return JSON.parse(JSON.stringify(DEFAULT_STATS));
 }
 
-function cargarStats() {
+let stats = getDefaultStats();
+
+const usePostgres = Boolean(Pool && DATABASE_URL);
+
+const pool = usePostgres
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: DATABASE_URL.includes("localhost")
+        ? false
+        : { rejectUnauthorized: false },
+    })
+  : null;
+
+async function initDb() {
+  if (!pool) {
+    console.log("⚠️ Stats sin PostgreSQL. Funcionará solo en memoria.");
+    return;
+  }
+
   try {
-    if (!fs.existsSync(DATA_FILE)) {
-      return getDefaultStats();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bot_stats (
+        id TEXT PRIMARY KEY,
+        data JSONB NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    const result = await pool.query(
+      "SELECT data FROM bot_stats WHERE id = $1 LIMIT 1",
+      ["dashboard"]
+    );
+
+    if (result.rows.length > 0 && result.rows[0].data) {
+      const saved = result.rows[0].data;
+      const base = getDefaultStats();
+
+      stats = {
+        ...base,
+        ...saved,
+        keywords: {
+          ...base.keywords,
+          ...(saved.keywords || {}),
+        },
+        porHora:
+          Array.isArray(saved.porHora) && saved.porHora.length === 24
+            ? saved.porHora
+            : Array(24).fill(0),
+        porDia: saved.porDia || {},
+        ultimasInteracciones: Array.isArray(saved.ultimasInteracciones)
+          ? saved.ultimasInteracciones
+          : [],
+        iniciadoEn: saved.iniciadoEn || new Date().toISOString(),
+      };
+
+      console.log("✅ Estadísticas cargadas desde PostgreSQL");
+    } else {
+      await saveStatsNow();
+      console.log("✅ Tabla de estadísticas creada en PostgreSQL");
     }
-
-    const raw = fs.readFileSync(DATA_FILE, "utf8");
-    const saved = raw ? JSON.parse(raw) : {};
-
-    const base = getDefaultStats();
-
-    return {
-      ...base,
-      ...saved,
-      keywords: {
-        ...base.keywords,
-        ...(saved.keywords || {}),
-      },
-      porHora:
-        Array.isArray(saved.porHora) && saved.porHora.length === 24
-          ? saved.porHora
-          : Array(24).fill(0),
-      porDia: saved.porDia || {},
-      ultimasInteracciones: Array.isArray(saved.ultimasInteracciones)
-        ? saved.ultimasInteracciones
-        : [],
-      iniciadoEn: saved.iniciadoEn || new Date().toISOString(),
-    };
   } catch (error) {
-    console.error("⚠️ No se pudieron cargar las estadísticas:", error.message);
-    return getDefaultStats();
+    console.error("❌ Error inicializando estadísticas en PostgreSQL:", error.message);
   }
 }
 
-const stats = cargarStats();
-
 let saveTimer = null;
 
-function guardarStatsSoon() {
+function saveStatsSoon() {
+  if (!pool) return;
+
   clearTimeout(saveTimer);
 
   saveTimer = setTimeout(() => {
-    try {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(DATA_FILE, JSON.stringify(stats, null, 2), "utf8");
-    } catch (error) {
-      console.error("⚠️ No se pudieron guardar las estadísticas:", error.message);
-    }
-  }, 300);
+    saveStatsNow().catch((error) => {
+      console.error("❌ Error guardando estadísticas:", error.message);
+    });
+  }, 500);
+}
+
+async function saveStatsNow() {
+  if (!pool) return;
+
+  await pool.query(
+    `
+    INSERT INTO bot_stats (id, data, updated_at)
+    VALUES ($1, $2, NOW())
+    ON CONFLICT (id)
+    DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+    `,
+    ["dashboard", stats]
+  );
 }
 
 function hoyKey(date = new Date()) {
@@ -141,7 +187,7 @@ function registrarInteraccion(tipo, detalle, estado = "ok") {
   }
 
   sumarDiaYHora(ahora);
-  guardarStatsSoon();
+  saveStatsSoon();
 }
 
 function sumarKeyword(key) {
@@ -269,9 +315,11 @@ const Stats = {
       actividadPorHora: stats.porHora,
       iniciadoEn: stats.iniciadoEn,
       uptime: Math.floor(process.uptime()),
+      persistencia: pool ? "postgresql" : "memoria",
     };
   },
 };
 
-module.exports = Stats;
+initDb();
+
 module.exports = Stats;
