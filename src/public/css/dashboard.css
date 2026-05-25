@@ -1103,3 +1103,17 @@ tbody tr:hover td {
   font-size: 12px;
   color: var(--muted);
 }
+
+
+.logo-img-wrap {
+  background: rgba(59, 130, 246, 0.12);
+  overflow: hidden;
+}
+
+.brand-logo-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: block;
+}
+
