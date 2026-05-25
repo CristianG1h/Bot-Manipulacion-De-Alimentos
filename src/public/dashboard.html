@@ -815,6 +815,202 @@ span.flatpickr-weekday {
     white-space: nowrap;
   }
 }
+
+    /* ─── FIX RESPONSIVE REAL: evita espacio vacío horizontal ───────────────── */
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  position: relative;
+}
+
+.wrap {
+  width: min(1240px, calc(100vw - 32px));
+  max-width: 1240px;
+}
+
+.topbar-inner,
+.filter-card,
+.metric-card,
+.chart-card,
+.charts-row,
+.bottom-row,
+.metrics-grid {
+  min-width: 0;
+}
+
+.charts-row,
+.bottom-row {
+  width: 100%;
+}
+
+.charts-row > *,
+.bottom-row > *,
+.metrics-grid > * {
+  min-width: 0;
+}
+
+canvas {
+  max-width: 100% !important;
+}
+
+/* Cuando el ancho baja, todo pasa a una columna antes */
+@media (max-width: 1150px) {
+  .charts-row,
+  .bottom-row {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metrics-grid.second {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Celular y pantallas angostas */
+@media (max-width: 768px) {
+  .topbar {
+    padding: 14px 12px;
+  }
+
+  .topbar-inner {
+    width: 100%;
+    max-width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .brand {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .brand-title {
+    font-size: 14px;
+    line-height: 1.2;
+  }
+
+  .brand-sub {
+    font-size: 11px;
+  }
+
+  .top-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .badge-live,
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .wrap {
+    width: 100%;
+    max-width: 100%;
+    padding: 18px 12px 34px;
+  }
+
+  .filter-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .metrics-grid,
+  .metrics-grid.second {
+    grid-template-columns: 1fr !important;
+  }
+
+  .metric-card {
+    width: 100%;
+    min-height: auto;
+  }
+
+  .chart-card {
+    width: 100%;
+    padding: 16px;
+    min-height: auto;
+  }
+
+  .chart-box {
+    height: 220px;
+  }
+
+  .donut-box {
+    height: 240px;
+  }
+
+  table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  thead,
+  tbody,
+  tr {
+    width: 100%;
+  }
+
+  th,
+  td {
+    padding: 9px 8px;
+  }
+
+  .kw-label {
+    width: 78px;
+    font-size: 11px;
+  }
+
+  .kw-count {
+    width: 28px;
+  }
+
+  .footer {
+    text-align: center;
+    line-height: 1.6;
+  }
+}
+
+/* Celular muy angosto */
+@media (max-width: 430px) {
+  .wrap {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .filter-card,
+  .metric-card,
+  .chart-card {
+    border-radius: 16px;
+  }
+
+  .metric-val {
+    font-size: 30px;
+  }
+
+  .chart-box {
+    height: 200px;
+  }
+
+  .donut-box {
+    height: 220px;
+  }
+
+  .custom-select-menu {
+    min-width: 100%;
+  }
+}
     
   </style>
 </head>
@@ -1408,6 +1604,19 @@ flatpickr("#toInput", {
 toggleCustomFields();
 loadStats();
 setInterval(loadStats, 15000);
+
+window.addEventListener("resize", () => {
+  if (lineChart) lineChart.resize();
+  if (donutChart) donutChart.resize();
+});
+
+window.addEventListener("orientationchange", () => {
+  setTimeout(() => {
+    if (lineChart) lineChart.resize();
+    if (donutChart) donutChart.resize();
+    loadStats();
+  }, 350);
+});
   </script>
 </body>
 </html>
