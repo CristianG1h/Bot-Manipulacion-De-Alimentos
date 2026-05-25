@@ -518,6 +518,146 @@ span.flatpickr-weekday {
   color: white !important;
 }
 
+    /* ─── Dropdown moderno personalizado ───────────────────────────── */
+.custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-btn {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), transparent),
+    rgba(15, 23, 42, .42);
+  color: var(--text);
+  padding: 0 12px;
+  border-radius: 12px;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+
+.custom-select-btn:hover,
+.custom-select.open .custom-select-btn {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .12);
+}
+
+.custom-select-btn i {
+  color: var(--muted);
+  transition: transform .18s;
+}
+
+.custom-select.open .custom-select-btn i {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.custom-select-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 100%;
+  min-width: 230px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), transparent),
+    #0f1b2d;
+  border: 1px solid rgba(96, 165, 250, .28);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .45);
+  padding: 8px;
+  z-index: 50;
+  display: none;
+}
+
+.custom-select.open .custom-select-menu {
+  display: block;
+  animation: dropdownIn .14s ease-out;
+}
+
+@keyframes dropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.custom-option {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 11px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  transition: background .15s, color .15s;
+}
+
+.custom-option i {
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.custom-option:hover {
+  background: rgba(59, 130, 246, .15);
+  color: #ffffff;
+}
+
+.custom-option:hover i {
+  color: #60a5fa;
+}
+
+.custom-option.active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, .28), rgba(96, 165, 250, .14));
+  color: #ffffff;
+}
+
+.custom-option.active i {
+  color: #60a5fa;
+}
+
+/* Modo claro */
+.light .custom-select-btn {
+  background: #f8fafc;
+}
+
+.light .custom-select-menu {
+  background: #ffffff;
+  border: 1px solid rgba(37, 99, 235, .22);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .18);
+}
+
+.light .custom-option {
+  color: #122033;
+}
+
+.light .custom-option:hover {
+  background: rgba(37, 99, 235, .10);
+}
+
+.light .custom-option.active {
+  background: rgba(37, 99, 235, .14);
+  color: #1d4ed8;
+}
+    
     @media (max-width: 1000px) {
       .filter-grid,
       .charts-row,
@@ -578,16 +718,45 @@ span.flatpickr-weekday {
           <input id="qInput" class="input" placeholder="Ej: 573212340504, certificado, asesor, link..." />
         </div>
 
-        <div class="field">
-          <label>Fecha</label>
-          <select id="rangeSelect" class="input">
-            <option value="all">Todo</option>
-            <option value="today">Hoy</option>
-            <option value="7d">Últimos 7 días</option>
-            <option value="30d">Últimos 30 días</option>
-            <option value="custom">Personalizado</option>
-          </select>
-        </div>
+       <div class="field">
+  <label>Fecha</label>
+
+  <input type="hidden" id="rangeSelect" value="all" />
+
+  <div class="custom-select" id="rangeDropdown">
+    <button type="button" class="custom-select-btn" id="rangeDropdownBtn">
+      <span id="rangeDropdownLabel">Todo</span>
+      <i class="ti ti-chevron-down"></i>
+    </button>
+
+    <div class="custom-select-menu" id="rangeDropdownMenu">
+      <button type="button" class="custom-option active" data-value="all">
+        <i class="ti ti-calendar-stats"></i>
+        <span>Todo</span>
+      </button>
+
+      <button type="button" class="custom-option" data-value="today">
+        <i class="ti ti-calendar-event"></i>
+        <span>Hoy</span>
+      </button>
+
+      <button type="button" class="custom-option" data-value="7d">
+        <i class="ti ti-calendar-week"></i>
+        <span>Últimos 7 días</span>
+      </button>
+
+      <button type="button" class="custom-option" data-value="30d">
+        <i class="ti ti-calendar-month"></i>
+        <span>Últimos 30 días</span>
+      </button>
+
+      <button type="button" class="custom-option" data-value="custom">
+        <i class="ti ti-calendar-search"></i>
+        <span>Personalizado</span>
+      </button>
+    </div>
+  </div>
+</div>
 
         <div class="field custom-field hidden">
           <label>Desde</label>
@@ -1010,13 +1179,20 @@ span.flatpickr-weekday {
     }
 
     function clearFilters() {
-      document.getElementById("qInput").value = "";
-      document.getElementById("rangeSelect").value = "all";
-      document.getElementById("fromInput").value = "";
-      document.getElementById("toInput").value = "";
-      toggleCustomFields();
-      loadStats();
-    }
+  document.getElementById("qInput").value = "";
+  document.getElementById("rangeSelect").value = "all";
+  document.getElementById("fromInput").value = "";
+  document.getElementById("toInput").value = "";
+
+  document.getElementById("rangeDropdownLabel").textContent = "Todo";
+
+  document.querySelectorAll("#rangeDropdownMenu .custom-option").forEach((option) => {
+    option.classList.toggle("active", option.dataset.value === "all");
+  });
+
+  toggleCustomFields();
+  loadStats();
+}
 
     function toggleCustomFields() {
       const range = document.getElementById("rangeSelect").value;
@@ -1025,11 +1201,47 @@ span.flatpickr-weekday {
       });
     }
 
-    document.getElementById("rangeSelect").addEventListener("change", () => {
+function initRangeDropdown() {
+  const dropdown = document.getElementById("rangeDropdown");
+  const btn = document.getElementById("rangeDropdownBtn");
+  const label = document.getElementById("rangeDropdownLabel");
+  const hiddenInput = document.getElementById("rangeSelect");
+  const options = document.querySelectorAll("#rangeDropdownMenu .custom-option");
+
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    dropdown.classList.toggle("open");
+  });
+
+  options.forEach((option) => {
+    option.addEventListener("click", () => {
+      const value = option.dataset.value;
+      const text = option.querySelector("span").textContent.trim();
+
+      hiddenInput.value = value;
+      label.textContent = text;
+
+      options.forEach((o) => o.classList.remove("active"));
+      option.classList.add("active");
+
+      dropdown.classList.remove("open");
+
       toggleCustomFields();
       loadStats();
     });
+  });
 
+  document.addEventListener("click", () => {
+    dropdown.classList.remove("open");
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      dropdown.classList.remove("open");
+    }
+  });
+}
+    
     document.getElementById("fromInput").addEventListener("change", loadStats);
     document.getElementById("toInput").addEventListener("change", loadStats);
 
@@ -1058,9 +1270,10 @@ flatpickr("#toInput", {
   onChange: loadStats,
 });
 
-    toggleCustomFields();
-    loadStats();
-    setInterval(loadStats, 15000);
+    initRangeDropdown();
+toggleCustomFields();
+loadStats();
+setInterval(loadStats, 15000);
   </script>
 </body>
 </html>
