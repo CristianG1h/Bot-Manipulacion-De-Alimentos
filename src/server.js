@@ -21,7 +21,7 @@ app.use("/certificate",        certificateRouter);
 app.use("/notify/certificate", certificateRouter);
 
 // Healthcheck
-app.get("/", (req, res) => res.status(200).send("OK"));
+app.get("/", (req, res) => res.status(200).send("OK TODO FUNCIONANDO PERRO"));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
