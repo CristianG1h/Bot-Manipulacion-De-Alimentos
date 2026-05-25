@@ -6,6 +6,7 @@ const router = express.Router();
 const { sendPayload, sendText } = require("../services/whatsapp");
 const { isRateLimited } = require("../utils/rateLimit");
 const { TEXT_MAX_LEN, COURSE_LINK, COURSE_PASSWORD } = require("../config");
+const Stats = require("../services/stats");
 
 // ─── Protección webhook ───────────────────────────────────────────────────────
 const WEBHOOK_TOKEN = process.env.CHATWOOT_WEBHOOK_TOKEN;
@@ -20,28 +21,35 @@ const ADVISOR_TIMEOUT_MS = 5 * 60 * 1000;
 
 function setAdvisorMode(wa_id) {
   clearAdvisorMode(wa_id, false);
+
   const timer = setTimeout(async () => {
     advisorMode.delete(wa_id);
     console.log(`⏰ Timeout asesor expirado para ${wa_id} — bot retoma`);
-    await sendText(
-      wa_id,
+
+    const msg =
       "⏱️ Han pasado 5 minutos sin respuesta de nuestro equipo.\n\n" +
       "Si aún necesitas ayuda puedes:\n\n" +
       "📱 Llamarnos al *313 401 0901*\n" +
       "📄 O escribir *instructivo* para recibir el link del curso.\n\n" +
-      "Seguimos a tu disposición. 🙌"
-    );
+      "Seguimos a tu disposición. 🙌";
+
+    await sendText(wa_id, msg);
   }, ADVISOR_TIMEOUT_MS);
+
   advisorMode.set(wa_id, timer);
   console.log(`👤 Modo asesor activado para ${wa_id}`);
 }
 
 function clearAdvisorMode(wa_id, log = true) {
   const timer = advisorMode.get(wa_id);
+
   if (timer) {
     clearTimeout(timer);
     advisorMode.delete(wa_id);
-    if (log) console.log(`✅ Modo asesor desactivado para ${wa_id}`);
+
+    if (log) {
+      console.log(`✅ Modo asesor desactivado para ${wa_id}`);
+    }
   }
 }
 
@@ -50,8 +58,14 @@ function extractButtonId(body) {
   if (id) return id;
 
   const text = (body.content || "").trim().toLowerCase();
-  if (text === "📄 instructivo y link" || text === "instructivo y link") return "ver_instructivo";
-  if (text === "💬 hablar con asesor"  || text === "hablar con asesor")  return "hablar_asesor";
+
+  if (text === "📄 instructivo y link" || text === "instructivo y link") {
+    return "ver_instructivo";
+  }
+
+  if (text === "💬 hablar con asesor" || text === "hablar con asesor") {
+    return "hablar_asesor";
+  }
 
   return null;
 }
@@ -88,11 +102,11 @@ async function crearNotaPrivadaChatwoot(conversationId, contenido) {
 
     const response = await fetch(url, {
       method: "POST",
-     headers: {
-  "Content-Type": "application/json",
-  api_access_token: apiToken,
-  "api-access-token": apiToken,
-},
+      headers: {
+        "Content-Type": "application/json",
+        api_access_token: apiToken,
+        "api-access-token": apiToken,
+      },
       body: JSON.stringify({
         content: `🤖 *Respuesta del bot:*\n\n${contenido}`,
         message_type: "outgoing",
@@ -117,8 +131,6 @@ async function crearNotaPrivadaChatwoot(conversationId, contenido) {
 router.get("/webhook", (req, res) => res.status(200).send("OK"));
 
 router.post("/webhook", async (req, res) => {
-
-  // Verificación del token
   if (WEBHOOK_TOKEN && req.query.token !== WEBHOOK_TOKEN) {
     console.warn("⚠️ Webhook rechazado — token inválido o ausente");
     return res.status(401).json({ ok: false, error: "Unauthorized" });
@@ -131,38 +143,38 @@ router.post("/webhook", async (req, res) => {
 
     if (body.event !== "message_created") return;
     if (body.message_type !== "incoming") return;
-    if (body.private === true)            return;
+    if (body.private === true) return;
 
     // ─────────────────────────────────────────────
-// FILTRO POR INBOX
-// Este bot SOLO debe responder mensajes del inbox del Curso de Alimentos.
-// Evita que responda cuando escriben al inbox de CRC.
-// ─────────────────────────────────────────────
-const expectedInboxId = Number(process.env.CHATWOOT_INBOX_ID || 0);
-const payloadInboxId = obtenerInboxIdDesdePayload(body);
+    // FILTRO POR INBOX
+    // Este bot SOLO debe responder mensajes del inbox del Curso de Alimentos.
+    // Evita que responda cuando escriben al inbox de CRC.
+    // ─────────────────────────────────────────────
+    const expectedInboxId = Number(process.env.CHATWOOT_INBOX_ID || 0);
+    const payloadInboxId = obtenerInboxIdDesdePayload(body);
 
-if (!expectedInboxId) {
-  console.log(
-    "❌ Falta configurar CHATWOOT_INBOX_ID en Render. Mensaje ignorado para evitar cruces entre bots."
-  );
-  return;
-}
+    if (!expectedInboxId) {
+      console.log(
+        "❌ Falta configurar CHATWOOT_INBOX_ID en Render. Mensaje ignorado para evitar cruces entre bots."
+      );
+      return;
+    }
 
-if (!payloadInboxId) {
-  console.log(
-    "⚠️ Webhook Chatwoot sin inbox_id claro. Mensaje ignorado para evitar mezclar canales."
-  );
-  return;
-}
+    if (!payloadInboxId) {
+      console.log(
+        "⚠️ Webhook Chatwoot sin inbox_id claro. Mensaje ignorado para evitar mezclar canales."
+      );
+      return;
+    }
 
-if (Number(payloadInboxId) !== expectedInboxId) {
-  console.log(
-    `⏭️ Mensaje ignorado por inbox diferente. Esperado: ${expectedInboxId}, recibido: ${payloadInboxId}`
-  );
-  return;
-}
+    if (Number(payloadInboxId) !== expectedInboxId) {
+      console.log(
+        `⏭️ Mensaje ignorado por inbox diferente. Esperado: ${expectedInboxId}, recibido: ${payloadInboxId}`
+      );
+      return;
+    }
 
-console.log("✅ Inbox correcto para Curso de Alimentos:", payloadInboxId);
+    console.log("✅ Inbox correcto para Curso de Alimentos:", payloadInboxId);
 
     const rawPhone =
       body.meta?.sender?.phone_number ||
@@ -179,31 +191,41 @@ console.log("✅ Inbox correcto para Curso de Alimentos:", payloadInboxId);
     const wa_id = rawPhone.replace(/\D/g, "");
     console.log(`📩 Mensaje de ${wa_id}`);
 
+    Stats.mensajeRecibido(wa_id);
+
     const rl = isRateLimited(wa_id);
+
     if (rl.limited) {
+      Stats.rateLimitado(wa_id);
+
       if (rl.reason === "too_many") {
         await sendText(wa_id, "⚠️ Demasiados mensajes seguidos. Intenta en unos minutos.");
       }
+
       return;
     }
 
     const messageId = body.id ? String(body.id) : null;
+
     if (messageId) {
       if (processedIds.has(messageId)) {
         console.log("⏭️ Duplicado ignorado:", messageId);
+        Stats.duplicadoIgnorado(messageId);
         return;
       }
+
       processedIds.add(messageId);
     }
 
     const conversationId = body.conversation?.id || body.conversation_id || null;
 
-const buttonId = extractButtonId(body);
-if (buttonId) {
-  console.log("🔘 Botón:", buttonId);
-  clearAdvisorMode(wa_id);
-  return await handleButton(wa_id, buttonId, conversationId);
-}
+    const buttonId = extractButtonId(body);
+
+    if (buttonId) {
+      console.log("🔘 Botón:", buttonId);
+      clearAdvisorMode(wa_id);
+      return await handleButton(wa_id, buttonId, conversationId);
+    }
 
     if (advisorMode.has(wa_id)) {
       console.log(`🤐 ${wa_id} en modo asesor — bot silenciado`);
@@ -212,75 +234,83 @@ if (buttonId) {
     }
 
     const rawText = (body.content || "").trim();
+
     if (!rawText) return;
 
     if (rawText.length > TEXT_MAX_LEN) {
       await sendText(wa_id, `⚠️ Mensaje muy largo. Máximo ${TEXT_MAX_LEN} caracteres.`);
+      Stats.mensajeNoReconocido(wa_id, "Mensaje muy largo");
       return;
     }
 
     const t = rawText.toLowerCase();
 
-const saludos = [
-  "hola",
-  "buenas",
-  "buenos días",
-  "buen día",
-  "buenas tardes",
-  "buenas noches",
-  "inicio",
-  "menu",
-  "menú",
-  "start",
-  "hi",
-  "hello",
-  "👋",
-];
+    const saludos = [
+      "hola",
+      "buenas",
+      "buenos días",
+      "buen día",
+      "buenas tardes",
+      "buenas noches",
+      "inicio",
+      "menu",
+      "menú",
+      "start",
+      "hi",
+      "hello",
+      "👋",
+    ];
 
-const recibidoKw = [
-  "ok, recibido",
-  "ok recibido",
-  "recibido",
-  "ok recivido",
-  "recivido",
-];
+    const recibidoKw = [
+      "ok, recibido",
+      "ok recibido",
+      "recibido",
+      "ok recivido",
+      "recivido",
+    ];
 
-const cursoKw = [
-  "instructivo",
-  "link",
-  "enlace",
-  "curso",
-  "acceso",
-  "contraseña",
-  "clave",
-  "usuario",
-  "certificado",
-];
+    const cursoKw = [
+      "instructivo",
+      "link",
+      "enlace",
+      "curso",
+      "acceso",
+      "contraseña",
+      "clave",
+      "usuario",
+      "certificado",
+    ];
 
-if (saludos.includes(t)) {
-  return await sendMainMenu(wa_id, conversationId);
-}
+    if (saludos.includes(t)) {
+      return await sendMainMenu(wa_id, conversationId);
+    }
 
-if (recibidoKw.some((k) => t.includes(k))) {
-  return await sendRecibidoConfirmacion(wa_id, conversationId);
-}
+    if (recibidoKw.some((k) => t.includes(k))) {
+      return await sendRecibidoConfirmacion(wa_id, conversationId);
+    }
 
-if (cursoKw.some((k) => t.includes(k))) {
-  return await sendCourseInfo(wa_id, conversationId);
-}
+    if (cursoKw.some((k) => t.includes(k))) {
+      return await sendCourseInfo(wa_id, conversationId);
+    }
 
     console.log(`🤷 Mensaje no reconocido de ${wa_id}: "${rawText}"`);
-    setAdvisorMode(wa_id);
-    const msgAsesor =
-  "👋 Gracias por escribirnos.\n\n" +
-  "Un asesor revisará tu mensaje y te responderá en breve. 🙌\n\n" +
-  "Si deseas atención más rápida, comunícate al:\n" +
-  "📱 *313 401 0901*";
 
-await sendText(wa_id, msgAsesor);
-await crearNotaPrivadaChatwoot(conversationId, msgAsesor);
+    Stats.mensajeNoReconocido(wa_id, rawText);
+    Stats.asesorActivado(wa_id);
+
+    setAdvisorMode(wa_id);
+
+    const msgAsesor =
+      "👋 Gracias por escribirnos.\n\n" +
+      "Un asesor revisará tu mensaje y te responderá en breve. 🙌\n\n" +
+      "Si deseas atención más rápida, comunícate al:\n" +
+      "📱 *313 401 0901*";
+
+    await sendText(wa_id, msgAsesor);
+    await crearNotaPrivadaChatwoot(conversationId, msgAsesor);
   } catch (error) {
     console.error("❌ Error en /chatwoot/webhook:", error);
+    Stats.metaError(`Error en /chatwoot/webhook: ${error.message}`);
   }
 });
 
@@ -291,19 +321,20 @@ async function handleButton(wa_id, buttonId, conversationId = null) {
   }
 
   if (buttonId === "hablar_asesor") {
-  setAdvisorMode(wa_id);
+    setAdvisorMode(wa_id);
+    Stats.asesorActivado(wa_id);
 
-  const msgAsesor =
-    "👤 *Atención personalizada*\n\n" +
-    "¡Listo! Un asesor se unirá a la conversación en breve. 🙌\n\n" +
-    "Si deseas atención más rápida, escríbenos al:\n" +
-    "📱 *313 401 0901*\n\n" +
-    "_Si no recibes respuesta en 5 minutos, el asistente automático retomará la conversación._";
+    const msgAsesor =
+      "👤 *Atención personalizada*\n\n" +
+      "¡Listo! Un asesor se unirá a la conversación en breve. 🙌\n\n" +
+      "Si deseas atención más rápida, escríbenos al:\n" +
+      "📱 *313 401 0901*\n\n" +
+      "_Si no recibes respuesta en 5 minutos, el asistente automático retomará la conversación._";
 
-  await sendText(wa_id, msgAsesor);
-  await crearNotaPrivadaChatwoot(conversationId, msgAsesor);
-  return;
-}
+    await sendText(wa_id, msgAsesor);
+    await crearNotaPrivadaChatwoot(conversationId, msgAsesor);
+    return;
+  }
 
   return await sendMainMenu(wa_id, conversationId);
 }
@@ -326,11 +357,15 @@ async function sendMainMenu(to, conversationId = null) {
       action: {
         buttons: [
           { type: "reply", reply: { id: "ver_instructivo", title: "📄 Instructivo y link" } },
-          { type: "reply", reply: { id: "hablar_asesor",   title: "💬 Hablar con asesor"  } },
+          { type: "reply", reply: { id: "hablar_asesor", title: "💬 Hablar con asesor" } },
         ],
       },
     },
   });
+
+  if (result) {
+    Stats.menuEnviado(to);
+  }
 
   await crearNotaPrivadaChatwoot(
     conversationId,
@@ -357,6 +392,8 @@ async function sendCourseInfo(to, conversationId = null) {
     "Si tienes alguna dificultad, escríbenos y te ayudamos. 🙌";
 
   await sendText(to, msg);
+  Stats.instructivoEnviado(to);
+
   await crearNotaPrivadaChatwoot(conversationId, msg);
 }
 
@@ -369,6 +406,8 @@ async function sendRecibidoConfirmacion(to, conversationId = null) {
     "🙌 Estamos pendientes para apoyarte.";
 
   await sendText(to, msg);
+  Stats.recibidoEnviado(to);
+
   await crearNotaPrivadaChatwoot(conversationId, msg);
 }
 

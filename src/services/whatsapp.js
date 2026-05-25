@@ -1,11 +1,12 @@
 "use strict";
 
 const { TOKEN, PHONE_NUMBER_ID, GRAPH_VERSION } = require("../config");
+const Stats = require("./stats");
 
 async function sendPayload(payload) {
   if (!TOKEN) {
     console.error("❌ TOKEN no configurado");
-    return;
+    return null;
   }
 
   try {
@@ -31,10 +32,12 @@ async function sendPayload(payload) {
 
     if (!r.ok) {
       console.error("❌ Error enviando mensaje:", r.status, data);
+      Stats.metaError(`Meta ${r.status}: ${data?.error?.message || "Error enviando mensaje"}`);
       return null;
     }
 
     console.log("✅ Enviado OK");
+    Stats.mensajeEnviado("whatsapp", "Mensaje enviado correctamente a Meta");
 
     if (data.messages?.[0]?.id) {
       console.log("🟢 Message ID:", data.messages[0].id);
@@ -44,21 +47,7 @@ async function sendPayload(payload) {
 
   } catch (e) {
     console.error("❌ Fallo fetch a WhatsApp:", e);
+    Stats.metaError(`Fallo fetch a WhatsApp: ${e.message}`);
     return null;
   }
 }
-
-async function sendText(to, bodyText) {
-  if (!TOKEN) return;
-
-  return await sendPayload({
-    messaging_product: "whatsapp",
-    to,
-    type: "text",
-    text: {
-      body: bodyText,
-    },
-  });
-}
-
-module.exports = { sendPayload, sendText };
