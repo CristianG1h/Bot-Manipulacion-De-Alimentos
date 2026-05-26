@@ -11,7 +11,11 @@
     "node": "20.x"
   },
   "dependencies": {
+    "axios": "^1.16.1",
+    "axios-cookiejar-support": "^7.0.0",
+    "cheerio": "^1.2.0",
     "express": "^4.19.2",
-    "pg": "^8.21.0"
+    "pg": "^8.21.0",
+    "tough-cookie": "^6.0.1"
   }
 }
