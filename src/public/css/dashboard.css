@@ -1204,3 +1204,15 @@ tbody tr:hover td {
     grid-template-columns: 1fr;
   }
 }
+
+.log-date {
+  font-weight: 800;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.log-time {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}

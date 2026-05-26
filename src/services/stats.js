@@ -306,13 +306,13 @@ function registrarInteraccion({
   const ahora = new Date();
 
   stats.ultimasInteracciones.unshift({
-    hora: horaBogota(ahora),
-    tipo,
-    detalle: String(detalle || "").slice(0, 160),
-    estado,
-    ts: ahora.getTime(),
-  });
-
+  fecha: fechaBogotaKey(ahora),
+  hora: horaBogota(ahora),
+  tipo,
+  detalle: String(detalle || "").slice(0, 160),
+  estado,
+  ts: ahora.getTime(),
+});
   if (stats.ultimasInteracciones.length > 50) {
     stats.ultimasInteracciones = stats.ultimasInteracciones.slice(0, 50);
   }
@@ -560,15 +560,15 @@ async function getSnapshotPostgres(query = {}) {
   const t = totalsResult.rows[0] || {};
 
   const logsResult = await pool.query(
-    `
-    SELECT hora, tipo, detalle, estado, wa_mask, ts
-    FROM bot_events
-    ${sql}
-    ORDER BY ts DESC
-    LIMIT 50
-    `,
-    params
-  );
+  `
+  SELECT fecha, hora, tipo, detalle, estado, wa_mask, ts
+  FROM bot_events
+  ${sql}
+  ORDER BY ts DESC
+  LIMIT 50
+  `,
+  params
+);
 
   const chartWhere = buildChartWhere(query);
 const chartMeta = buildChartDateFilter(query);
@@ -648,13 +648,14 @@ for (
       erroresMeta: Number(t.errores_meta || 0),
     },
     ultimasInteracciones: logsResult.rows.map((r) => ({
-      hora: r.hora,
-      tipo: r.tipo,
-      detalle: r.detalle,
-      estado: r.estado,
-      wa_mask: r.wa_mask,
-      ts: r.ts,
-    })),
+  fecha: r.fecha,
+  hora: r.hora,
+  tipo: r.tipo,
+  detalle: r.detalle,
+  estado: r.estado,
+  wa_mask: r.wa_mask,
+  ts: r.ts,
+})),
     keywords,
     actividadPorDia,
     actividadPorHora: stats.porHora,

@@ -242,6 +242,28 @@
       });
     }
 
+    function formatFecha(value) {
+  if (!value) return "—";
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-");
+    return `${day}/${month}/${year}`;
+  }
+
+  const d = new Date(value);
+
+  if (Number.isNaN(d.getTime())) {
+    return "—";
+  }
+
+  return d.toLocaleDateString("es-CO", {
+    timeZone: "America/Bogota",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
     function renderLogs(items) {
       const body = document.getElementById("logBody");
 
@@ -250,13 +272,21 @@
         return;
       }
 
-      body.innerHTML = items.map(i => `
-        <tr>
-          <td style="color:var(--muted);white-space:nowrap">${i.hora || "—"}</td>
-          <td>${i.detalle || "—"}</td>
-          <td><span class="badge ${badgeClass(i.estado)}">${badgeLabel(i.estado)}</span></td>
-        </tr>
-      `).join("");
+      body.innerHTML = items.map(i => {
+  const fecha = formatFecha(i.fecha || i.ts);
+  const hora = i.hora || "—";
+
+  return `
+    <tr>
+      <td style="color:var(--muted);white-space:nowrap">
+        <div class="log-date">${fecha}</div>
+        <div class="log-time">${hora}</div>
+      </td>
+      <td>${i.detalle || "—"}</td>
+      <td><span class="badge ${badgeClass(i.estado)}">${badgeLabel(i.estado)}</span></td>
+    </tr>
+  `;
+}).join("");
     }
 
     function renderKeywords(keywords) {
