@@ -373,7 +373,6 @@ function moveChartRange(direction) {
         document.getElementById("m-rec").textContent = formatNumber(data.totales.mensajesRecibidos);
         document.getElementById("m-msg").textContent = formatNumber(data.totales.mensajesEnviados);
         document.getElementById("m-acc").textContent = formatNumber(data.totales.accesosEnviados);
-        document.getElementById("m-cert").textContent = formatNumber(data.totales.certificadosEnviados);
         document.getElementById("m-asesor").textContent = formatNumber(data.totales.asesoresActivados);
         document.getElementById("m-norec").textContent = formatNumber(data.totales.mensajesNoReconocidos);
 
@@ -387,6 +386,41 @@ function moveChartRange(direction) {
         renderKeywords(data.keywords);
       } catch (error) {
         console.error("Error cargando estadísticas:", error);
+      }
+    }
+
+
+    async function cargarMetricasCertificados() {
+      try {
+        const res = await fetch("/api/admin-certificados", { cache: "no-store" });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        if (!data.ok) {
+          console.error("❌ Error cargando métricas certificados:", data);
+          return;
+        }
+
+        const m = data.metricas || {};
+
+        const setText = (id, value) => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = formatNumber(value);
+        };
+
+        setText("m-cert", m.certificados_emitidos);
+        setText("m-empresas", m.empresas_activas);
+        setText("m-facturados", m.total_facturados);
+        setText("m-no-facturados", m.total_no_facturados);
+        setText("m-total-usuarios", m.total_usuarios);
+        setText("m-usuarios-empresa", m.total_usuarios_empresa);
+        setText("m-usuarios-admin", m.total_usuarios_administradores);
+      } catch (error) {
+        console.error("❌ Error conectando con /api/admin-certificados:", error);
       }
     }
 
@@ -529,7 +563,9 @@ flatpickr("#chartToInput", {
     initRangeDropdown();
 toggleCustomFields();
 loadStats();
+cargarMetricasCertificados();
 setInterval(loadStats, 15000);
+setInterval(cargarMetricasCertificados, 60000);
 
 window.addEventListener("resize", () => {
   if (lineChart) lineChart.resize();
