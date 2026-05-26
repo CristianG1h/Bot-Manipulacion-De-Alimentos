@@ -74,24 +74,16 @@
   if (mainRange === "all") {
     chartSelect.value = "14d";
     chartRange = "14d";
-  }
-
-  if (mainRange === "today") {
+  } else if (mainRange === "today") {
     chartSelect.value = "today";
     chartRange = "today";
-  }
-
-  if (mainRange === "7d") {
+  } else if (mainRange === "7d") {
     chartSelect.value = "7d";
     chartRange = "7d";
-  }
-
-  if (mainRange === "30d") {
+  } else if (mainRange === "30d") {
     chartSelect.value = "30d";
     chartRange = "30d";
-  }
-
-  if (mainRange === "custom") {
+  } else if (mainRange === "custom") {
     chartSelect.value = "custom";
     chartRange = "custom";
 
@@ -101,11 +93,14 @@
     const chartFrom = document.getElementById("chartFromInput");
     const chartTo = document.getElementById("chartToInput");
 
-    if (chartFrom && mainFrom) chartFrom.value = mainFrom;
-    if (chartTo && mainTo) chartTo.value = mainTo;
-  }
+    if (chartFrom && mainFrom) {
+      chartFrom.value = mainFrom;
+    }
 
-  chartOffset = 0;
+    if (chartTo && mainTo) {
+      chartTo.value = mainTo;
+    }
+  }
 
   if (chartCustomBox) {
     chartCustomBox.classList.toggle("hidden", chartRange !== "custom");
@@ -113,8 +108,6 @@
 }
 
     function buildQueryParams() {
-  syncChartWithMainFilter();
-
   const params = new URLSearchParams();
 
   const q = document.getElementById("qInput").value.trim();
@@ -126,7 +119,9 @@
   const chartFrom = document.getElementById("chartFromInput")?.value || "";
   const chartTo = document.getElementById("chartToInput")?.value || "";
 
-  if (q) params.set("q", q);
+  if (q) {
+    params.set("q", q);
+  }
 
   if (range) {
     params.set("range", range);
@@ -318,7 +313,7 @@ function changeChartRange() {
 }
 
 function moveChartRange(direction) {
-  const currentRange = document.getElementById("chartRangeSelect").value;
+  const currentRange = document.getElementById("chartRangeSelect")?.value || "14d";
 
   if (currentRange === "custom") {
     return;
@@ -426,6 +421,7 @@ function initRangeDropdown() {
 
       dropdown.classList.remove("open");
 
+        chartOffset = 0;
         toggleCustomFields();
         syncChartWithMainFilter();
         loadStats();
@@ -443,8 +439,17 @@ function initRangeDropdown() {
   });
 }
     
-    document.getElementById("fromInput").addEventListener("change", loadStats);
-    document.getElementById("toInput").addEventListener("change", loadStats);
+    document.getElementById("fromInput").addEventListener("change", () => {
+  chartOffset = 0;
+  syncChartWithMainFilter();
+  loadStats();
+});
+
+document.getElementById("toInput").addEventListener("change", () => {
+  chartOffset = 0;
+  syncChartWithMainFilter();
+  loadStats();
+});
 
     document.getElementById("qInput").addEventListener("input", () => {
       clearTimeout(debounceTimer);
