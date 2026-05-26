@@ -1216,3 +1216,28 @@ tbody tr:hover td {
   color: var(--muted);
   font-size: 11px;
 }
+
+
+/* ─── Métricas nuevas de plataforma certificados ───────────────────── */
+
+.metrics-grid.primary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metrics-grid.certificados {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1150px) {
+  .metrics-grid.primary,
+  .metrics-grid.certificados {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .metrics-grid.primary,
+  .metrics-grid.certificados {
+    grid-template-columns: 1fr !important;
+  }
+}
