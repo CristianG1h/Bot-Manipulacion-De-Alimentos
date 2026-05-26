@@ -215,12 +215,40 @@
 
     <section class="charts-row">
       <div class="chart-card">
-        <div class="chart-title">Actividad diaria — últimos 14 días</div>
-        <div class="chart-sub">Interacciones registradas por día según el filtro aplicado</div>
-        <div class="chart-box">
-          <canvas id="lineChart"></canvas>
-        </div>
-      </div>
+  <div class="chart-header-row">
+    <div>
+      <div class="chart-title" id="activityTitle">Actividad diaria — últimos 14 días</div>
+      <div class="chart-sub" id="activitySub">Interacciones registradas por día según el filtro aplicado</div>
+    </div>
+
+    <div class="chart-controls">
+      <button type="button" class="chart-nav-btn" onclick="moveChartRange(-1)">
+        <i class="ti ti-chevron-left"></i>
+      </button>
+
+      <select id="chartRangeSelect" class="chart-range-select" onchange="changeChartRange()">
+        <option value="14d">14 días</option>
+        <option value="today">Hoy</option>
+        <option value="7d">Últimos 7 días</option>
+        <option value="30d">Últimos 30 días</option>
+        <option value="custom">Personalizado</option>
+      </select>
+
+      <button type="button" class="chart-nav-btn" onclick="moveChartRange(1)">
+        <i class="ti ti-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="chart-custom-dates hidden" id="chartCustomDates">
+    <input id="chartFromInput" type="text" class="input" placeholder="Desde" readonly />
+    <input id="chartToInput" type="text" class="input" placeholder="Hasta" readonly />
+  </div>
+
+  <div class="chart-box">
+    <canvas id="lineChart"></canvas>
+  </div>
+</div>
 
       <div class="chart-card">
         <div class="chart-title">Distribución de palabras clave</div>

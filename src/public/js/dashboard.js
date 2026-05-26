@@ -2,6 +2,8 @@
     let lineChart = null;
     let donutChart = null;
     let debounceTimer = null;
+    let chartRange = "14d";
+    let chartOffset = 0;
 
     const kwColors = [
       "#3b82f6",
@@ -63,23 +65,35 @@
     }
 
     function buildQueryParams() {
-      const params = new URLSearchParams();
+  const params = new URLSearchParams();
 
-      const q = document.getElementById("qInput").value.trim();
-      const range = document.getElementById("rangeSelect").value;
-      const from = document.getElementById("fromInput").value;
-      const to = document.getElementById("toInput").value;
+  const q = document.getElementById("qInput").value.trim();
+  const range = document.getElementById("rangeSelect").value;
+  const from = document.getElementById("fromInput").value;
+  const to = document.getElementById("toInput").value;
 
-      if (q) params.set("q", q);
-      if (range) params.set("range", range);
+  const chartRangeValue = document.getElementById("chartRangeSelect")?.value || "14d";
+  const chartFrom = document.getElementById("chartFromInput")?.value || "";
+  const chartTo = document.getElementById("chartToInput")?.value || "";
 
-      if (range === "custom") {
-        if (from) params.set("from", from);
-        if (to) params.set("to", to);
-      }
+  if (q) params.set("q", q);
+  if (range) params.set("range", range);
 
-      return params.toString();
-    }
+  if (range === "custom") {
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+  }
+
+  params.set("chartRange", chartRangeValue);
+  params.set("chartOffset", String(chartOffset));
+
+  if (chartRangeValue === "custom") {
+    if (chartFrom) params.set("chartFrom", chartFrom);
+    if (chartTo) params.set("chartTo", chartTo);
+  }
+
+  return params.toString();
+}
 
     function renderCharts(data) {
       const textColor = isLight ? "#64748b" : "#9db7d8";
@@ -216,6 +230,49 @@
       `).join("");
     }
 
+    function updateActivityTitle(data) {
+  const chartRangeValue = document.getElementById("chartRangeSelect")?.value || "14d";
+  const title = document.getElementById("activityTitle");
+  const sub = document.getElementById("activitySub");
+
+  const labels = {
+    today: "Actividad diaria — hoy",
+    "7d": "Actividad diaria — últimos 7 días",
+    "14d": "Actividad diaria — últimos 14 días",
+    "30d": "Actividad diaria — últimos 30 días",
+    custom: "Actividad diaria — rango personalizado",
+  };
+
+  title.textContent = labels[chartRangeValue] || "Actividad diaria";
+
+  if (data?.chartMeta?.desde && data?.chartMeta?.hasta) {
+    sub.textContent = `Interacciones del ${data.chartMeta.desde} al ${data.chartMeta.hasta}`;
+  } else {
+    sub.textContent = "Interacciones registradas por día según el filtro aplicado";
+  }
+}
+
+function changeChartRange() {
+  chartRange = document.getElementById("chartRangeSelect").value;
+  chartOffset = 0;
+
+  const customBox = document.getElementById("chartCustomDates");
+  customBox.classList.toggle("hidden", chartRange !== "custom");
+
+  loadStats();
+}
+
+function moveChartRange(direction) {
+  const currentRange = document.getElementById("chartRangeSelect").value;
+
+  if (currentRange === "custom") {
+    return;
+  }
+
+  chartOffset += Number(direction || 0);
+  loadStats();
+}
+
     async function loadStats() {
       try {
         const query = buildQueryParams();
@@ -230,6 +287,7 @@
         const data = await res.json();
 
         window.lastData = data;
+        updateActivityTitle(data);
 
         document.getElementById("m-conv").textContent = formatNumber(data.totales.conversaciones);
         document.getElementById("m-rec").textContent = formatNumber(data.totales.mensajesRecibidos);
@@ -335,6 +393,26 @@ function initRangeDropdown() {
 });
 
 flatpickr("#toInput", {
+  locale: "es",
+  dateFormat: "Y-m-d",
+  altInput: true,
+  altFormat: "d/m/Y",
+  allowInput: false,
+  disableMobile: true,
+  onChange: loadStats,
+});
+
+flatpickr("#chartFromInput", {
+  locale: "es",
+  dateFormat: "Y-m-d",
+  altInput: true,
+  altFormat: "d/m/Y",
+  allowInput: false,
+  disableMobile: true,
+  onChange: loadStats,
+});
+
+flatpickr("#chartToInput", {
   locale: "es",
   dateFormat: "Y-m-d",
   altInput: true,

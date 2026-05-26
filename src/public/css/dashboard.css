@@ -1117,3 +1117,90 @@ tbody tr:hover td {
   display: block;
 }
 
+/* ─── Controles modernos para gráfica de actividad ───────────────────── */
+
+.chart-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.chart-nav-btn,
+.chart-range-select {
+  height: 36px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), transparent),
+    rgba(15, 23, 42, .42);
+  color: var(--text);
+  border-radius: 12px;
+  outline: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chart-nav-btn {
+  width: 38px;
+  display: grid;
+  place-items: center;
+}
+
+.chart-range-select {
+  min-width: 145px;
+  padding: 0 12px;
+}
+
+.chart-nav-btn:hover,
+.chart-range-select:hover {
+  border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.chart-custom-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 180px));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.chart-custom-dates.hidden {
+  display: none;
+}
+
+.light .chart-nav-btn,
+.light .chart-range-select {
+  background: #f8fafc;
+}
+
+/* Celular */
+@media (max-width: 768px) {
+  .chart-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .chart-controls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 42px 1fr 42px;
+  }
+
+  .chart-nav-btn,
+  .chart-range-select {
+    width: 100%;
+  }
+
+  .chart-custom-dates {
+    grid-template-columns: 1fr;
+  }
+}

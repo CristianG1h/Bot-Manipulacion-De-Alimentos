@@ -379,11 +379,115 @@ function buildDateFilter(query = {}) {
   return { start, end, range };
 }
 
+function buildChartDateFilter(query = {}) {
+  const range = String(query.chartRange || "14d");
+  const offset = Number(query.chartOffset || 0);
+
+  const now = new Date();
+
+  let days = 14;
+
+  if (range === "today") days = 1;
+  if (range === "7d") days = 7;
+  if (range === "14d") days = 14;
+  if (range === "30d") days = 30;
+
+  let start = null;
+  let end = null;
+
+  if (range === "custom" && query.chartFrom && query.chartTo) {
+    start = `${query.chartFrom}T00:00:00-05:00`;
+    end = `${query.chartTo}T23:59:59-05:00`;
+
+    return {
+      start,
+      end,
+      range,
+      days: null,
+      desde: query.chartFrom,
+      hasta: query.chartTo,
+    };
+  }
+
+  const endDate = new Date(now);
+  endDate.setDate(endDate.getDate() + offset * days);
+
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - (days - 1));
+
+  const startKey = fechaBogotaKey(startDate);
+  const endKey = fechaBogotaKey(endDate);
+
+  start = `${startKey}T00:00:00-05:00`;
+  end = `${endKey}T23:59:59-05:00`;
+
+  return {
+    start,
+    end,
+    range,
+    days,
+    desde: startKey,
+    hasta: endKey,
+  };
+}
+
 function buildWhere(query = {}) {
   const params = [];
   const where = [];
 
   const { start, end } = buildDateFilter(query);
+
+  if (start && end) {
+    params.push(start);
+    where.push(`ts >= $${params.length}`);
+
+    params.push(end);
+    where.push(`ts <= $${params.length}`);
+  }
+
+  const q = String(query.q || "").trim();
+
+  if (q) {
+    const qClean = q.replace(/\D/g, "");
+    params.push(`%${q.toLowerCase()}%`);
+    const pText = `$${params.length}`;
+
+    if (qClean.length >= 4) {
+      params.push(`%${qClean}%`);
+      const pPhone = `$${params.length}`;
+
+      where.push(`(
+        LOWER(detalle) LIKE ${pText}
+        OR LOWER(tipo) LIKE ${pText}
+        OR LOWER(estado) LIKE ${pText}
+        OR EXISTS (
+          SELECT 1 FROM unnest(keywords) k WHERE LOWER(k) LIKE ${pText}
+        )
+        OR wa_id LIKE ${pPhone}
+      )`);
+    } else {
+      where.push(`(
+        LOWER(detalle) LIKE ${pText}
+        OR LOWER(tipo) LIKE ${pText}
+        OR LOWER(estado) LIKE ${pText}
+        OR EXISTS (
+          SELECT 1 FROM unnest(keywords) k WHERE LOWER(k) LIKE ${pText}
+        )
+      )`);
+    }
+  }
+
+  return {
+    sql: where.length ? `WHERE ${where.join(" AND ")}` : "",
+    params,
+  };
+}
+
+function buildChartWhere(query = {}) {
+  const params = [];
+  const where = [];
+
+  const { start, end } = buildChartDateFilter(query);
 
   if (start && end) {
     params.push(start);
@@ -466,17 +570,19 @@ async function getSnapshotPostgres(query = {}) {
     params
   );
 
-  const daysResult = await pool.query(
-    `
-    SELECT fecha, COUNT(*)::int AS total
-    FROM bot_events
-    ${sql}
-    GROUP BY fecha
-    ORDER BY fecha ASC
-    `,
-    params
-  );
+  const chartWhere = buildChartWhere(query);
+const chartMeta = buildChartDateFilter(query);
 
+const daysResult = await pool.query(
+  `
+  SELECT fecha, COUNT(*)::int AS total
+  FROM bot_events
+  ${chartWhere.sql}
+  GROUP BY fecha
+  ORDER BY fecha ASC
+  `,
+  chartWhere.params
+);
   const daysMap = {};
   for (const row of daysResult.rows) {
     daysMap[row.fecha] = Number(row.total || 0);
@@ -484,18 +590,22 @@ async function getSnapshotPostgres(query = {}) {
 
   const actividadPorDia = [];
 
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+const startDate = new Date(`${chartMeta.desde}T00:00:00-05:00`);
+const endDate = new Date(`${chartMeta.hasta}T00:00:00-05:00`);
 
-    const key = fechaBogotaKey(d);
+for (
+  let d = new Date(startDate);
+  d.getTime() <= endDate.getTime();
+  d.setDate(d.getDate() + 1)
+) {
+  const key = fechaBogotaKey(d);
 
-    actividadPorDia.push({
-      fecha: key,
-      label: fechaBogotaLabel(d),
-      total: daysMap[key] || 0,
-    });
-  }
+  actividadPorDia.push({
+    fecha: key,
+    label: fechaBogotaLabel(d),
+    total: daysMap[key] || 0,
+  });
+}
 
   const keywordResult = await pool.query(
     `
@@ -552,12 +662,20 @@ async function getSnapshotPostgres(query = {}) {
     uptime: Math.floor(process.uptime()),
     persistencia: "postgresql",
     zonaHoraria: "America/Bogota",
-    filtros: {
-      q: query.q || "",
-      range: query.range || "all",
-      from: query.from || "",
-      to: query.to || "",
-    },
+    chartMeta: {
+  range: chartMeta.range,
+  desde: chartMeta.desde,
+  hasta: chartMeta.hasta,
+},
+
+filtros: {
+  q: query.q || "",
+  range: query.range || "all",
+  from: query.from || "",
+  to: query.to || "",
+  chartRange: query.chartRange || "14d",
+  chartOffset: query.chartOffset || "0",
+},
   };
 }
 
@@ -587,12 +705,20 @@ function getSnapshotMemoria(query = {}) {
     uptime: Math.floor(process.uptime()),
     persistencia: "memoria",
     zonaHoraria: "America/Bogota",
-    filtros: {
-      q: query.q || "",
-      range: query.range || "all",
-      from: query.from || "",
-      to: query.to || "",
-    },
+    chartMeta: {
+  range: chartMeta.range,
+  desde: chartMeta.desde,
+  hasta: chartMeta.hasta,
+},
+
+filtros: {
+  q: query.q || "",
+  range: query.range || "all",
+  from: query.from || "",
+  to: query.to || "",
+  chartRange: query.chartRange || "14d",
+  chartOffset: query.chartOffset || "0",
+},
   };
 }
 
