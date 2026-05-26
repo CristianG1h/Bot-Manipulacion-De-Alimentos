@@ -64,7 +64,57 @@
       }[estado] || "OK";
     }
 
+    function syncChartWithMainFilter() {
+  const mainRange = document.getElementById("rangeSelect")?.value || "all";
+  const chartSelect = document.getElementById("chartRangeSelect");
+  const chartCustomBox = document.getElementById("chartCustomDates");
+
+  if (!chartSelect) return;
+
+  if (mainRange === "all") {
+    chartSelect.value = "14d";
+    chartRange = "14d";
+  }
+
+  if (mainRange === "today") {
+    chartSelect.value = "today";
+    chartRange = "today";
+  }
+
+  if (mainRange === "7d") {
+    chartSelect.value = "7d";
+    chartRange = "7d";
+  }
+
+  if (mainRange === "30d") {
+    chartSelect.value = "30d";
+    chartRange = "30d";
+  }
+
+  if (mainRange === "custom") {
+    chartSelect.value = "custom";
+    chartRange = "custom";
+
+    const mainFrom = document.getElementById("fromInput")?.value || "";
+    const mainTo = document.getElementById("toInput")?.value || "";
+
+    const chartFrom = document.getElementById("chartFromInput");
+    const chartTo = document.getElementById("chartToInput");
+
+    if (chartFrom && mainFrom) chartFrom.value = mainFrom;
+    if (chartTo && mainTo) chartTo.value = mainTo;
+  }
+
+  chartOffset = 0;
+
+  if (chartCustomBox) {
+    chartCustomBox.classList.toggle("hidden", chartRange !== "custom");
+  }
+}
+
     function buildQueryParams() {
+  syncChartWithMainFilter();
+
   const params = new URLSearchParams();
 
   const q = document.getElementById("qInput").value.trim();
@@ -77,7 +127,10 @@
   const chartTo = document.getElementById("chartToInput")?.value || "";
 
   if (q) params.set("q", q);
-  if (range) params.set("range", range);
+
+  if (range) {
+    params.set("range", range);
+  }
 
   if (range === "custom") {
     if (from) params.set("from", from);
@@ -94,7 +147,6 @@
 
   return params.toString();
 }
-
     function renderCharts(data) {
       const textColor = isLight ? "#64748b" : "#9db7d8";
       const gridColor = isLight ? "rgba(15,23,42,.08)" : "rgba(148,163,184,.09)";
@@ -257,7 +309,10 @@ function changeChartRange() {
   chartOffset = 0;
 
   const customBox = document.getElementById("chartCustomDates");
-  customBox.classList.toggle("hidden", chartRange !== "custom");
+
+  if (customBox) {
+    customBox.classList.toggle("hidden", chartRange !== "custom");
+  }
 
   loadStats();
 }
@@ -316,6 +371,19 @@ function moveChartRange(direction) {
   document.getElementById("fromInput").value = "";
   document.getElementById("toInput").value = "";
 
+  const chartSelect = document.getElementById("chartRangeSelect");
+  const chartFrom = document.getElementById("chartFromInput");
+  const chartTo = document.getElementById("chartToInput");
+  const chartCustomBox = document.getElementById("chartCustomDates");
+
+  if (chartSelect) chartSelect.value = "14d";
+  if (chartFrom) chartFrom.value = "";
+  if (chartTo) chartTo.value = "";
+  if (chartCustomBox) chartCustomBox.classList.add("hidden");
+
+  chartRange = "14d";
+  chartOffset = 0;
+
   document.getElementById("rangeDropdownLabel").textContent = "Todo";
 
   document.querySelectorAll("#rangeDropdownMenu .custom-option").forEach((option) => {
@@ -358,8 +426,9 @@ function initRangeDropdown() {
 
       dropdown.classList.remove("open");
 
-      toggleCustomFields();
-      loadStats();
+        toggleCustomFields();
+        syncChartWithMainFilter();
+        loadStats();
     });
   });
 
