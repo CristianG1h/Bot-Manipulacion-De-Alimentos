@@ -6,6 +6,7 @@ const path = require("path");
 const notifyRouter = require("./routes/notify");
 const certificateRouter = require("./routes/certificate");
 const chatwootRouter = require("./routes/chatwoot");
+const adminCertificadosRouter = require("./routes/adminCertificados");
 const Stats = require("./services/stats");
 
 const app = express();
@@ -193,6 +194,8 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
     });
   }
 });
+// API certificados admin protegida
+app.use("/api/admin-certificados", protegerDashboard, adminCertificadosRouter);
 
 // Healthcheck público para Render/UptimeRobot
 app.get("/health", (req, res) => {
