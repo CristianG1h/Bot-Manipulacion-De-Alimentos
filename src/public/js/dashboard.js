@@ -496,6 +496,132 @@ function normalizarTextoEmpresa(value) {
     .trim();
 }
 
+function esUsuarioAdministradorEmpresa(u) {
+  const tipoDoc = String(u.tipo_doc || "").toUpperCase().trim();
+  const rol = String(u.rol_detectado || "").toLowerCase().trim();
+
+  return tipoDoc === "NIT" || rol === "administrador";
+}
+
+function parseFechaPanelCertificados(value) {
+  if (!value || value === "—") return null;
+
+  const texto = String(value).trim();
+
+  // Formato esperado: 26/05/2026 11:43
+  const match = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const year = Number(match[3]);
+  const hour = Number(match[4] || 0);
+  const minute = Number(match[5] || 0);
+
+  const date = new Date(year, month, day, hour, minute, 0);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date;
+}
+
+function inicioDia(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function finDia(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function getRangoFechaEmpresa() {
+  const range = document.getElementById("rangeSelect")?.value || "all";
+  const fromInput = document.getElementById("fromInput")?.value || "";
+  const toInput = document.getElementById("toInput")?.value || "";
+
+  const hoy = new Date();
+  const hoyInicio = inicioDia(hoy);
+  const hoyFin = finDia(hoy);
+
+  if (range === "all") {
+    return null;
+  }
+
+  if (range === "today") {
+    return {
+      desde: hoyInicio,
+      hasta: hoyFin,
+    };
+  }
+
+  if (range === "7d") {
+    const desde = inicioDia(hoy);
+    desde.setDate(desde.getDate() - 6);
+
+    return {
+      desde,
+      hasta: hoyFin,
+    };
+  }
+
+  if (range === "30d") {
+    const desde = inicioDia(hoy);
+    desde.setDate(desde.getDate() - 29);
+
+    return {
+      desde,
+      hasta: hoyFin,
+    };
+  }
+
+  if (range === "custom") {
+    if (!fromInput && !toInput) return null;
+
+    let desde = null;
+    let hasta = null;
+
+    if (fromInput) {
+      const [year, month, day] = fromInput.split("-").map(Number);
+      desde = inicioDia(new Date(year, month - 1, day));
+    }
+
+    if (toInput) {
+      const [year, month, day] = toInput.split("-").map(Number);
+      hasta = finDia(new Date(year, month - 1, day));
+    }
+
+    return {
+      desde,
+      hasta,
+    };
+  }
+
+  return null;
+}
+
+function usuarioCumpleFiltroFechaEmpresa(u) {
+  const rango = getRangoFechaEmpresa();
+
+  if (!rango) return true;
+
+  const fechaPrimerIngreso = parseFechaPanelCertificados(u.primer_ingreso);
+  const fechaUltimoIngreso = parseFechaPanelCertificados(u.ultimo_ingreso);
+
+  // Usamos la fecha que exista. Primero último ingreso, si no existe primer ingreso.
+  const fecha = fechaUltimoIngreso || fechaPrimerIngreso;
+
+  if (!fecha) return false;
+
+  if (rango.desde && fecha < rango.desde) return false;
+  if (rango.hasta && fecha > rango.hasta) return false;
+
+  return true;
+}
+
 function revisarFiltroEmpresa() {
   const q = normalizarTextoEmpresa(document.getElementById("qInput")?.value || "");
 
@@ -505,12 +631,19 @@ function revisarFiltroEmpresa() {
   }
 
   const resultados = usuariosCertificadosCache.filter((u) => {
+    if (esUsuarioAdministradorEmpresa(u)) {
+      return false;
+    }
+
     const empresa = normalizarTextoEmpresa(u.empresa);
-    return empresa.includes(q);
+    const coincideEmpresa = empresa.includes(q);
+    const cumpleFecha = usuarioCumpleFiltroFechaEmpresa(u);
+
+    return coincideEmpresa && cumpleFecha;
   });
 
   if (!resultados.length) {
-    cerrarPanelEmpresa(false);
+    mostrarPanelEmpresa([]);
     return;
   }
 
@@ -518,7 +651,7 @@ function revisarFiltroEmpresa() {
 }
 
 function mostrarPanelEmpresa(usuarios) {
-  usuariosEmpresaFiltrados = usuarios;
+  usuariosEmpresaFiltrados = Array.isArray(usuarios) ? usuarios : [];
 
   const panel = document.getElementById("empresaPanel");
   const body = document.getElementById("empresaBody");
@@ -527,34 +660,45 @@ function mostrarPanelEmpresa(usuarios) {
 
   if (!panel || !body) return;
 
-  const empresaNombre = usuarios[0]?.empresa || "Empresa filtrada";
+  const q = document.getElementById("qInput")?.value || "";
+  const empresaNombre = usuariosEmpresaFiltrados[0]?.empresa || `Búsqueda: ${q}`;
 
   titulo.textContent = empresaNombre;
-  subtitulo.textContent = `${usuarios.length} usuario(s) encontrados`;
+  subtitulo.textContent = `${usuariosEmpresaFiltrados.length} usuario(s) encontrados según empresa y fecha`;
 
-  body.innerHTML = usuarios.map((u) => {
-    const nombre = u.usuario || "";
-    const cedula = u.documento || "";
-    const empresa = u.empresa || "";
-    const primerIngreso = u.primer_ingreso === "—" ? "" : (u.primer_ingreso || "");
-    const ultimoIngreso = u.ultimo_ingreso === "—" ? "" : (u.ultimo_ingreso || "");
-    const realizoCurso = u.completado === true ? "Sí" : "No";
-    const certificado = u.certificado_url
-      ? `<a href="${u.certificado_url}" target="_blank" class="empresa-cert-link">Ver certificado</a>`
-      : "";
-
-    return `
+  if (!usuariosEmpresaFiltrados.length) {
+    body.innerHTML = `
       <tr>
-        <td>${nombre}</td>
-        <td>${cedula}</td>
-        <td>${empresa}</td>
-        <td>${primerIngreso}</td>
-        <td>${ultimoIngreso}</td>
-        <td>${realizoCurso}</td>
-        <td>${certificado}</td>
+        <td colspan="7" style="text-align:center;color:var(--muted);padding:22px">
+          No hay usuarios de curso para esta empresa en el rango seleccionado.
+        </td>
       </tr>
     `;
-  }).join("");
+  } else {
+    body.innerHTML = usuariosEmpresaFiltrados.map((u) => {
+      const nombre = u.usuario || "";
+      const cedula = u.documento || "";
+      const empresa = u.empresa || "";
+      const primerIngreso = u.primer_ingreso === "—" ? "" : (u.primer_ingreso || "");
+      const ultimoIngreso = u.ultimo_ingreso === "—" ? "" : (u.ultimo_ingreso || "");
+      const realizoCurso = u.completado === true ? "Sí" : "No";
+      const certificado = u.certificado_url
+        ? `<a href="${u.certificado_url}" target="_blank" class="empresa-cert-link">Ver certificado</a>`
+        : "";
+
+      return `
+        <tr>
+          <td>${nombre}</td>
+          <td>${cedula}</td>
+          <td>${empresa}</td>
+          <td>${primerIngreso}</td>
+          <td>${ultimoIngreso}</td>
+          <td>${realizoCurso}</td>
+          <td>${certificado}</td>
+        </tr>
+      `;
+    }).join("");
+  }
 
   panel.classList.remove("hidden");
 
@@ -746,6 +890,7 @@ function initRangeDropdown() {
         toggleCustomFields();
         syncChartWithMainFilter();
         loadStats();
+        revisarFiltroEmpresa();
     });
   });
 
@@ -764,12 +909,14 @@ function initRangeDropdown() {
   chartOffset = 0;
   syncChartWithMainFilter();
   loadStats();
+  revisarFiltroEmpresa();
 });
 
 document.getElementById("toInput").addEventListener("change", () => {
   chartOffset = 0;
   syncChartWithMainFilter();
   loadStats();
+  revisarFiltroEmpresa();
 });
 
     document.getElementById("qInput").addEventListener("input", () => {
@@ -788,7 +935,10 @@ document.getElementById("toInput").addEventListener("change", () => {
   altFormat: "d/m/Y",
   allowInput: false,
   disableMobile: true,
-  onChange: loadStats,
+  onChange: () => {
+  loadStats();
+  revisarFiltroEmpresa();
+},
 });
 
 flatpickr("#toInput", {
@@ -798,7 +948,10 @@ flatpickr("#toInput", {
   altFormat: "d/m/Y",
   allowInput: false,
   disableMobile: true,
-  onChange: loadStats,
+  onChange: () => {
+  loadStats();
+  revisarFiltroEmpresa();
+},
 });
 
 flatpickr("#chartFromInput", {
