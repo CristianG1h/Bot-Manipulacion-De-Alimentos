@@ -477,10 +477,11 @@ if (window.lastLogsFilterKey !== currentLogsFilterKey) {
       if (el) el.textContent = formatNumber(value);
     };
 
-    setText("totalUsuariosCertificados", m.total_usuarios);
-    setText("m-cert", m.certificados_emitidos);
-    setText("totalFacturados", m.total_facturados);
-    setText("totalNoFacturados", m.total_no_facturados);
+    const usuariosCurso = usuariosCertificadosCache.filter((u) => {
+  return !esUsuarioAdministradorEmpresa(u);
+});
+
+actualizarMetricasCertificadosDesdeUsuarios(usuariosCurso);
 
     revisarFiltroEmpresa();
   } catch (error) {
@@ -650,8 +651,37 @@ function revisarFiltroEmpresa() {
   mostrarPanelEmpresa(resultados);
 }
 
+function actualizarMetricasCertificadosDesdeUsuarios(usuarios) {
+  const lista = Array.isArray(usuarios) ? usuarios : [];
+
+  const totalUsuarios = lista.length;
+
+  const certificadosEmitidos = lista.filter((u) => {
+    return u.certificado_url || u.completado === true;
+  }).length;
+
+  const totalFacturados = lista.filter((u) => {
+    return u.facturado === true;
+  }).length;
+
+  const totalNoFacturados = lista.filter((u) => {
+    return u.facturado === false;
+  }).length;
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = formatNumber(value);
+  };
+
+  setText("totalUsuariosCertificados", totalUsuarios);
+  setText("m-cert", certificadosEmitidos);
+  setText("totalFacturados", totalFacturados);
+  setText("totalNoFacturados", totalNoFacturados);
+}
+
 function mostrarPanelEmpresa(usuarios) {
   usuariosEmpresaFiltrados = Array.isArray(usuarios) ? usuarios : [];
+    actualizarMetricasCertificadosDesdeUsuarios(usuariosEmpresaFiltrados);
 
   const panel = document.getElementById("empresaPanel");
   const body = document.getElementById("empresaBody");
@@ -718,6 +748,10 @@ function cerrarPanelEmpresa(limpiarBusqueda = true) {
 
   usuariosEmpresaFiltrados = [];
 
+    actualizarMetricasCertificadosDesdeUsuarios(
+  usuariosCertificadosCache.filter((u) => !esUsuarioAdministradorEmpresa(u))
+);
+    
   if (limpiarBusqueda) {
     const input = document.getElementById("qInput");
     if (input) input.value = "";
