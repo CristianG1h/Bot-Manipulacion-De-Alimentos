@@ -1241,3 +1241,50 @@ tbody tr:hover td {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ─── Paginación últimas interacciones ───────────────────── */
+
+.log-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(148, 163, 184, .12);
+}
+
+.log-page-btn {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), transparent),
+    rgba(15, 23, 42, .42);
+  color: var(--text);
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.log-page-btn:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.log-page-btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+#logPageInfo {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.light .log-page-btn {
+  background: #f8fafc;
+}
