@@ -227,6 +227,42 @@
   </div>
 </section>
 
+<section class="empresa-panel hidden" id="empresaPanel">
+  <div class="empresa-header">
+    <div>
+      <div class="chart-title" id="empresaTitulo">Empresa</div>
+      <div class="chart-sub" id="empresaSubtitulo">Usuarios encontrados</div>
+    </div>
+
+    <div class="empresa-actions">
+      <button type="button" class="btn" onclick="descargarExcelEmpresa()">
+        <i class="ti ti-file-spreadsheet"></i> Descargar Excel
+      </button>
+
+      <button type="button" class="btn" onclick="cerrarPanelEmpresa()">
+        <i class="ti ti-arrow-back-up"></i> Volver al dashboard
+      </button>
+    </div>
+  </div>
+
+  <div class="empresa-table-wrap">
+    <table class="empresa-table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Cédula</th>
+          <th>Empresa</th>
+          <th>Primer ingreso</th>
+          <th>Último ingreso</th>
+          <th>Realizó curso</th>
+          <th>Certificado</th>
+        </tr>
+      </thead>
+      <tbody id="empresaBody"></tbody>
+    </table>
+  </div>
+</section>
+
     <section class="charts-row">
       <div class="chart-card">
   <div class="chart-header-row">
@@ -320,6 +356,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
-  <script src="/public/js/dashboard.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="/public/js/dashboard.js?v=6"></script>
 </body>
 </html>

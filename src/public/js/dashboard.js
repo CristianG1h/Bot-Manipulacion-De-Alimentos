@@ -1,6 +1,8 @@
     let isLight = false;
     let lineChart = null;
     let donutChart = null;
+    let usuariosCertificadosCache = [];
+    let usuariosEmpresaFiltrados = [];
     let debounceTimer = null;
     let chartRange = "14d";
     let chartOffset = 0;
@@ -466,6 +468,8 @@ if (window.lastLogsFilterKey !== currentLogsFilterKey) {
       return;
     }
 
+    usuariosCertificadosCache = Array.isArray(data.usuarios) ? data.usuarios : [];
+
     const m = data.metricas || {};
 
     const setText = (id, value) => {
@@ -477,13 +481,208 @@ if (window.lastLogsFilterKey !== currentLogsFilterKey) {
     setText("m-cert", m.certificados_emitidos);
     setText("totalFacturados", m.total_facturados);
     setText("totalNoFacturados", m.total_no_facturados);
+
+    revisarFiltroEmpresa();
   } catch (error) {
     console.error("❌ Error conectando con /api/admin-certificados:", error);
   }
 }
 
+function normalizarTextoEmpresa(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function revisarFiltroEmpresa() {
+  const q = normalizarTextoEmpresa(document.getElementById("qInput")?.value || "");
+
+  if (!q || q.length < 3) {
+    cerrarPanelEmpresa(false);
+    return;
+  }
+
+  const resultados = usuariosCertificadosCache.filter((u) => {
+    const empresa = normalizarTextoEmpresa(u.empresa);
+    return empresa.includes(q);
+  });
+
+  if (!resultados.length) {
+    cerrarPanelEmpresa(false);
+    return;
+  }
+
+  mostrarPanelEmpresa(resultados);
+}
+
+function mostrarPanelEmpresa(usuarios) {
+  usuariosEmpresaFiltrados = usuarios;
+
+  const panel = document.getElementById("empresaPanel");
+  const body = document.getElementById("empresaBody");
+  const titulo = document.getElementById("empresaTitulo");
+  const subtitulo = document.getElementById("empresaSubtitulo");
+
+  if (!panel || !body) return;
+
+  const empresaNombre = usuarios[0]?.empresa || "Empresa filtrada";
+
+  titulo.textContent = empresaNombre;
+  subtitulo.textContent = `${usuarios.length} usuario(s) encontrados`;
+
+  body.innerHTML = usuarios.map((u) => {
+    const nombre = u.usuario || "";
+    const cedula = u.documento || "";
+    const empresa = u.empresa || "";
+    const primerIngreso = u.primer_ingreso === "—" ? "" : (u.primer_ingreso || "");
+    const ultimoIngreso = u.ultimo_ingreso === "—" ? "" : (u.ultimo_ingreso || "");
+    const realizoCurso = u.completado === true ? "Sí" : "No";
+    const certificado = u.certificado_url
+      ? `<a href="${u.certificado_url}" target="_blank" class="empresa-cert-link">Ver certificado</a>`
+      : "";
+
+    return `
+      <tr>
+        <td>${nombre}</td>
+        <td>${cedula}</td>
+        <td>${empresa}</td>
+        <td>${primerIngreso}</td>
+        <td>${ultimoIngreso}</td>
+        <td>${realizoCurso}</td>
+        <td>${certificado}</td>
+      </tr>
+    `;
+  }).join("");
+
+  panel.classList.remove("hidden");
+
+  document.querySelector(".charts-row")?.classList.add("hidden");
+  document.querySelector(".bottom-row")?.classList.add("hidden");
+}
+
+function cerrarPanelEmpresa(limpiarBusqueda = true) {
+  const panel = document.getElementById("empresaPanel");
+
+  if (panel) {
+    panel.classList.add("hidden");
+  }
+
+  document.querySelector(".charts-row")?.classList.remove("hidden");
+  document.querySelector(".bottom-row")?.classList.remove("hidden");
+
+  usuariosEmpresaFiltrados = [];
+
+  if (limpiarBusqueda) {
+    const input = document.getElementById("qInput");
+    if (input) input.value = "";
+    loadStats();
+  }
+}
+
+function descargarExcelEmpresa() {
+  if (!usuariosEmpresaFiltrados.length) {
+    alert("No hay datos de empresa para descargar.");
+    return;
+  }
+
+  const empresaNombre = usuariosEmpresaFiltrados[0]?.empresa || "Empresa";
+
+  const rows = [
+    [empresaNombre],
+    [],
+    [
+      "Nombre",
+      "Cédula",
+      "Empresa",
+      "Primer ingreso",
+      "Último ingreso",
+      "Realizó curso",
+      "Link certificado"
+    ],
+    ...usuariosEmpresaFiltrados.map((u) => [
+      u.usuario || "",
+      u.documento || "",
+      u.empresa || "",
+      u.primer_ingreso === "—" ? "" : (u.primer_ingreso || ""),
+      u.ultimo_ingreso === "—" ? "" : (u.ultimo_ingreso || ""),
+      u.completado === true ? "Sí" : "No",
+      u.certificado_url || ""
+    ])
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }
+  ];
+
+  ws["!cols"] = [
+    { wch: 28 },
+    { wch: 16 },
+    { wch: 36 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 60 }
+  ];
+
+  ws["A1"].s = {
+    font: { bold: true, sz: 16, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center", vertical: "center" },
+    fill: { fgColor: { rgb: "1F4E78" } }
+  };
+
+  const headerRow = 2;
+  for (let col = 0; col <= 6; col++) {
+    const cell = XLSX.utils.encode_cell({ r: headerRow, c: col });
+    if (!ws[cell]) continue;
+
+    ws[cell].s = {
+      font: { bold: true, color: { rgb: "000000" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      fill: { fgColor: { rgb: "D9EAF7" } },
+      border: {
+        top: { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left: { style: "thin", color: { rgb: "000000" } },
+        right: { style: "thin", color: { rgb: "000000" } }
+      }
+    };
+  }
+
+  for (let row = 3; row < rows.length; row++) {
+    for (let col = 0; col <= 6; col++) {
+      const cell = XLSX.utils.encode_cell({ r: row, c: col });
+      if (!ws[cell]) continue;
+
+      ws[cell].s = {
+        alignment: { vertical: "center", wrapText: true },
+        border: {
+          top: { style: "thin", color: { rgb: "BFBFBF" } },
+          bottom: { style: "thin", color: { rgb: "BFBFBF" } },
+          left: { style: "thin", color: { rgb: "BFBFBF" } },
+          right: { style: "thin", color: { rgb: "BFBFBF" } }
+        }
+      };
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, "Usuarios empresa");
+
+  const nombreArchivo = empresaNombre
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "_")
+    .toLowerCase();
+
+  XLSX.writeFile(wb, `${nombreArchivo}_usuarios.xlsx`);
+}
+
     function clearFilters() {
   document.getElementById("qInput").value = "";
+  cerrarPanelEmpresa(false);
   document.getElementById("rangeSelect").value = "all";
   document.getElementById("fromInput").value = "";
   document.getElementById("toInput").value = "";
@@ -574,9 +773,13 @@ document.getElementById("toInput").addEventListener("change", () => {
 });
 
     document.getElementById("qInput").addEventListener("input", () => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(loadStats, 500);
-    });
+  clearTimeout(debounceTimer);
+
+  debounceTimer = setTimeout(() => {
+    loadStats();
+    revisarFiltroEmpresa();
+  }, 500);
+});
 
     flatpickr("#fromInput", {
   locale: "es",

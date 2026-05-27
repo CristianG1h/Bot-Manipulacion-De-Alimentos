@@ -1288,3 +1288,83 @@ tbody tr:hover td {
 .light .log-page-btn {
   background: #f8fafc;
 }
+
+/* ─── Panel empresa filtrada ───────────────────── */
+
+.empresa-panel {
+  background: linear-gradient(180deg, rgba(255,255,255,.035), transparent), var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 22px 50px rgba(0, 0, 0, .15);
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+.empresa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.empresa-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.empresa-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.empresa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.empresa-table th {
+  text-align: left;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .9px;
+  text-transform: uppercase;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.empresa-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, .09);
+  vertical-align: middle;
+}
+
+.empresa-cert-link {
+  color: #93c5fd;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.empresa-cert-link:hover {
+  text-decoration: underline;
+}
+
+.empresa-hidden-area.hidden {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .empresa-header {
+    flex-direction: column;
+  }
+
+  .empresa-actions {
+    width: 100%;
+  }
+
+  .empresa-actions .btn {
+    width: 100%;
+  }
+}
