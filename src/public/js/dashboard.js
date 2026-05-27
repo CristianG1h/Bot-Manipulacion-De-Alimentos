@@ -369,12 +369,15 @@ function moveChartRange(direction) {
         window.lastData = data;
         updateActivityTitle(data);
 
-        document.getElementById("m-conv").textContent = formatNumber(data.totales.conversaciones);
-        document.getElementById("m-rec").textContent = formatNumber(data.totales.mensajesRecibidos);
-        document.getElementById("m-msg").textContent = formatNumber(data.totales.mensajesEnviados);
-        document.getElementById("m-acc").textContent = formatNumber(data.totales.accesosEnviados);
-        document.getElementById("m-asesor").textContent = formatNumber(data.totales.asesoresActivados);
-        document.getElementById("m-norec").textContent = formatNumber(data.totales.mensajesNoReconocidos);
+        const setBotText = (id, value) => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = formatNumber(value);
+        };
+
+        setBotText("m-conv", data.totales.conversaciones);
+        setBotText("m-rec", data.totales.mensajesRecibidos);
+        setBotText("m-msg", data.totales.mensajesEnviados);
+        setBotText("m-acc", data.totales.accesosEnviados);
 
         document.getElementById("uptimeVal").textContent = formatUptime(data.uptime);
         document.getElementById("iniciadoEn").textContent = new Date(data.iniciadoEn).toLocaleString("es-CO");
