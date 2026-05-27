@@ -4,6 +4,8 @@
     let debounceTimer = null;
     let chartRange = "14d";
     let chartOffset = 0;
+    let logsPage = 0;
+    const logsPageSize = 10;
 
     const kwColors = [
       "#3b82f6",
@@ -265,29 +267,75 @@
 }
 
     function renderLogs(items) {
-      const body = document.getElementById("logBody");
+  const body = document.getElementById("logBody");
+  const pageInfo = document.getElementById("logPageInfo");
+  const prevBtn = document.getElementById("logPrevBtn");
+  const nextBtn = document.getElementById("logNextBtn");
 
-      if (!items || !items.length) {
-        body.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:22px">Sin resultados para este filtro</td></tr>';
-        return;
-      }
+  const logs = Array.isArray(items) ? items : [];
+  const totalPages = Math.max(1, Math.ceil(logs.length / logsPageSize));
 
-      body.innerHTML = items.map(i => {
-  const fecha = formatFecha(i.fecha || i.ts);
-  const hora = i.hora || "—";
+  if (logsPage > totalPages - 1) {
+    logsPage = totalPages - 1;
+  }
 
-  return `
-    <tr>
-      <td style="color:var(--muted);white-space:nowrap">
-        <div class="log-date">${fecha}</div>
-        <div class="log-time">${hora}</div>
-      </td>
-      <td>${i.detalle || "—"}</td>
-      <td><span class="badge ${badgeClass(i.estado)}">${badgeLabel(i.estado)}</span></td>
-    </tr>
-  `;
-}).join("");
-    }
+  if (logsPage < 0) {
+    logsPage = 0;
+  }
+
+  if (!logs.length) {
+    body.innerHTML = `
+      <tr>
+        <td colspan="3" style="text-align:center;color:var(--muted);padding:22px">
+          Sin resultados para este filtro
+        </td>
+      </tr>
+    `;
+
+    if (pageInfo) pageInfo.textContent = "Página 0 de 0";
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+
+    return;
+  }
+
+  const start = logsPage * logsPageSize;
+  const end = start + logsPageSize;
+  const pageItems = logs.slice(start, end);
+
+  body.innerHTML = pageItems.map(i => {
+    const fecha = formatFecha(i.fecha || i.ts);
+    const hora = i.hora || "—";
+
+    return `
+      <tr>
+        <td style="color:var(--muted);white-space:nowrap">
+          <div class="log-date">${fecha}</div>
+          <div class="log-time">${hora}</div>
+        </td>
+        <td>${i.detalle || "—"}</td>
+        <td><span class="badge ${badgeClass(i.estado)}">${badgeLabel(i.estado)}</span></td>
+      </tr>
+    `;
+  }).join("");
+
+  if (pageInfo) {
+    pageInfo.textContent = `Página ${logsPage + 1} de ${totalPages}`;
+  }
+
+  if (prevBtn) {
+    prevBtn.disabled = logsPage <= 0;
+  }
+
+  if (nextBtn) {
+    nextBtn.disabled = logsPage >= totalPages - 1;
+  }
+}
+
+function moveLogsPage(direction) {
+  logsPage += Number(direction || 0);
+  renderLogs(window.lastData?.ultimasInteracciones || []);
+}
 
     function renderKeywords(keywords) {
       const entries = Object.entries(keywords || {})
@@ -385,6 +433,16 @@ function moveChartRange(direction) {
         document.getElementById("persistencia").textContent = data.persistencia || "—";
 
         renderCharts(data);
+          if (!window.lastLogsFilterKey) {
+  window.lastLogsFilterKey = "";
+}
+
+const currentLogsFilterKey = buildQueryParams();
+
+if (window.lastLogsFilterKey !== currentLogsFilterKey) {
+  logsPage = 0;
+  window.lastLogsFilterKey = currentLogsFilterKey;
+}
         renderLogs(data.ultimasInteracciones);
         renderKeywords(data.keywords);
       } catch (error) {
