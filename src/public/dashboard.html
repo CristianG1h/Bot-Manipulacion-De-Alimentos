@@ -287,7 +287,19 @@
             </tr>
           </thead>
           <tbody id="logBody"></tbody>
-        </table>
+</table>
+
+<div class="log-pagination">
+  <button type="button" class="log-page-btn" onclick="moveLogsPage(-1)" id="logPrevBtn">
+    <i class="ti ti-chevron-left"></i>
+  </button>
+
+  <span id="logPageInfo">Página 1</span>
+
+  <button type="button" class="log-page-btn" onclick="moveLogsPage(1)" id="logNextBtn">
+    <i class="ti ti-chevron-right"></i>
+  </button>
+</div>
       </div>
 
       <div class="chart-card">
