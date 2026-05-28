@@ -477,11 +477,18 @@ if (window.lastLogsFilterKey !== currentLogsFilterKey) {
       if (el) el.textContent = formatNumber(value);
     };
 
-    const usuariosCurso = usuariosCertificadosCache.filter((u) => {
+    const modo = document.getElementById("searchMode")?.value || "bot";
+const q = normalizarTextoEmpresa(document.getElementById("qInput")?.value || "");
+
+const usuariosCurso = usuariosCertificadosCache.filter((u) => {
   return !esUsuarioAdministradorEmpresa(u);
 });
 
-actualizarMetricasCertificadosDesdeUsuarios(usuariosCurso);
+if (modo === "empresa" && q.length >= 3) {
+  revisarFiltroEmpresa();
+} else {
+  actualizarMetricasCertificadosDesdeUsuarios(usuariosCurso);
+}
 
     revisarFiltroEmpresa();
   } catch (error) {
@@ -1044,7 +1051,7 @@ toggleCustomFields();
 loadStats();
 cargarMetricasCertificados();
 setInterval(loadStats, 15000);
-setInterval(cargarMetricasCertificados, 60000);
+setInterval(cargarMetricasCertificados, 15000);
 
 window.addEventListener("resize", () => {
   if (lineChart) lineChart.resize();
