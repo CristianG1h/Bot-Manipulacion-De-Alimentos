@@ -624,7 +624,13 @@ function usuarioCumpleFiltroFechaEmpresa(u) {
 }
 
 function revisarFiltroEmpresa() {
+  const modo = document.getElementById("searchMode")?.value || "bot";
   const q = normalizarTextoEmpresa(document.getElementById("qInput")?.value || "");
+
+  if (modo !== "empresa") {
+    cerrarPanelEmpresa(false);
+    return;
+  }
 
   if (!q || q.length < 3) {
     cerrarPanelEmpresa(false);
@@ -642,11 +648,6 @@ function revisarFiltroEmpresa() {
 
     return coincideEmpresa && cumpleFecha;
   });
-
-  if (!resultados.length) {
-    mostrarPanelEmpresa([]);
-    return;
-  }
 
   mostrarPanelEmpresa(resultados);
 }
@@ -860,6 +861,8 @@ function descargarExcelEmpresa() {
 
     function clearFilters() {
   document.getElementById("qInput").value = "";
+  const searchMode = document.getElementById("searchMode");
+  if (searchMode) searchMode.value = "bot";
   cerrarPanelEmpresa(false);
   document.getElementById("rangeSelect").value = "all";
   document.getElementById("fromInput").value = "";
@@ -901,6 +904,17 @@ function initRangeDropdown() {
   const label = document.getElementById("rangeDropdownLabel");
   const hiddenInput = document.getElementById("rangeSelect");
   const options = document.querySelectorAll("#rangeDropdownMenu .custom-option");
+
+  function aplicarFiltroPrincipal() {
+  const modo = document.getElementById("searchMode")?.value || "bot";
+
+  if (modo === "empresa") {
+    revisarFiltroEmpresa();
+  } else {
+    cerrarPanelEmpresa(false);
+    loadStats();
+  }
+}
 
   btn.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -956,9 +970,26 @@ document.getElementById("toInput").addEventListener("change", () => {
     document.getElementById("qInput").addEventListener("input", () => {
   clearTimeout(debounceTimer);
 
-  debounceTimer = setTimeout(() => {
-    loadStats();
+  document.getElementById("searchMode")?.addEventListener("change", () => {
+  const modo = document.getElementById("searchMode")?.value || "bot";
+
+  if (modo === "empresa") {
     revisarFiltroEmpresa();
+  } else {
+    cerrarPanelEmpresa(false);
+    loadStats();
+  }
+});
+
+  debounceTimer = setTimeout(() => {
+    const modo = document.getElementById("searchMode")?.value || "bot";
+
+    if (modo === "empresa") {
+      revisarFiltroEmpresa();
+    } else {
+      cerrarPanelEmpresa(false);
+      loadStats();
+    }
   }, 500);
 });
 

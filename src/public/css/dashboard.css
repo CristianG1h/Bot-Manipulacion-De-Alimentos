@@ -172,11 +172,11 @@
     }
 
     .filter-grid {
-      display: grid;
-      grid-template-columns: 1.5fr .8fr .7fr .7fr auto auto;
-      gap: 12px;
-      align-items: end;
-    }
+  display: grid;
+  grid-template-columns: 1.4fr .7fr .7fr .7fr .7fr auto auto;
+  gap: 12px;
+  align-items: end;
+}
 
     .field label {
       display: block;
@@ -1368,3 +1368,4 @@ tbody tr:hover td {
     width: 100%;
   }
 }
+

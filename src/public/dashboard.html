@@ -69,9 +69,17 @@
     <section class="filter-card">
       <div class="filter-grid">
         <div class="field">
-          <label>Buscar por número, palabra o evento</label>
-          <input id="qInput" class="input" placeholder="Ej: 573212340504, certificado, asesor, link..." />
-        </div>
+  <label>Buscar por número, palabra o evento</label>
+  <input id="qInput" class="input" placeholder="Ej: 573212340504, certificado, asesor, link..." />
+</div>
+
+<div class="field">
+  <label>Buscar en</label>
+  <select id="searchMode" class="input">
+    <option value="bot">Bot / interacciones</option>
+    <option value="empresa">Empresa / usuarios curso</option>
+  </select>
+</div>
 
         <div class="field">
           <label>Fecha</label>
@@ -123,9 +131,9 @@
           <input id="toInput" type="text" class="input" placeholder="Seleccionar fecha" readonly />
         </div>
 
-        <button class="btn" onclick="loadStats()">
-          <i class="ti ti-search"></i> Filtrar
-        </button>
+        <button class="btn" onclick="aplicarFiltroPrincipal()">
+  <i class="ti ti-search"></i> Filtrar
+</button>
 
         <button class="btn" onclick="clearFilters()">
           <i class="ti ti-x"></i> Limpiar
