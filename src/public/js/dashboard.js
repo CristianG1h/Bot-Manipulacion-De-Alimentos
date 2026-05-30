@@ -1015,17 +1015,6 @@ document.getElementById("searchMode")?.addEventListener("change", () => {
   }
 });
 
-  debounceTimer = setTimeout(() => {
-    const modo = document.getElementById("searchMode")?.value || "bot";
-
-    if (modo === "empresa") {
-      revisarFiltroEmpresa();
-    } else {
-      cerrarPanelEmpresa(false);
-      loadStats();
-    }
-  }, 500);
-});
 
     flatpickr("#fromInput", {
   locale: "es",
