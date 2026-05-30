@@ -1003,6 +1003,18 @@ document.getElementById("toInput").addEventListener("change", () => {
   }, 500);
 });
 
+document.getElementById("searchMode")?.addEventListener("change", () => {
+  const modo = document.getElementById("searchMode")?.value || "bot";
+
+  if (modo === "empresa") {
+    revisarFiltroEmpresa();
+  } else {
+    cerrarPanelEmpresa(false);
+    loadStats();
+    cargarMetricasCertificados();
+  }
+});
+
   debounceTimer = setTimeout(() => {
     const modo = document.getElementById("searchMode")?.value || "bot";
 
