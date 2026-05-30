@@ -8,6 +8,15 @@ function getPool() {
     return null;
   }
 
+  try {
+  console.log(
+    "🔎 CERTIFICADOS_DATABASE_URL host:",
+    new URL(process.env.CERTIFICADOS_DATABASE_URL).hostname
+  );
+} catch (e) {
+  console.log("❌ CERTIFICADOS_DATABASE_URL inválida");
+}
+
   if (!pool) {
     pool = new Pool({
       connectionString: process.env.CERTIFICADOS_DATABASE_URL,

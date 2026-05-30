@@ -9,6 +9,11 @@ try {
 }
 
 const DATABASE_URL = process.env.DATABASE_URL;
+try {
+  console.log("🔎 DATABASE_URL host:", DATABASE_URL ? new URL(DATABASE_URL).hostname : "sin DATABASE_URL");
+} catch (e) {
+  console.log("❌ DATABASE_URL inválida:", DATABASE_URL);
+}
 
 const DEFAULT_STATS = {
   contactosUnicos: [],
