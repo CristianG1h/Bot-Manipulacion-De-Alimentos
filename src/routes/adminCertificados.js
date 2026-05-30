@@ -4,6 +4,11 @@ const cheerio = require("cheerio");
 const { CookieJar } = require("tough-cookie");
 const { wrapper } = require("axios-cookiejar-support");
 
+const {
+  getCachedName,
+  saveCachedName,
+} = require("../services/certificadosNameCache");
+
 const router = express.Router();
 
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL;
@@ -301,6 +306,7 @@ function cumpleRangoFecha(usuario, rango) {
 function limpiarUsuarioParaFrontend(usuario) {
   return {
     id: usuario.id || "",
+    nombre: usuario.nombre || usuario.usuario || "",
     usuario: usuario.usuario || "",
     documento: usuario.documento || "",
     empresa: usuario.empresa || "",
@@ -347,6 +353,108 @@ router.get("/", async (req, res) => {
   }
 });
 
+function extraerValorInputPorLabel($, labelTexto) {
+  let valor = "";
+
+  $("label").each((_, label) => {
+    const texto = normalizarTexto($(label).text());
+
+    if (texto.includes(normalizarTexto(labelTexto))) {
+      const contenedor = $(label).closest("div");
+      const input = contenedor.find("input, select, textarea").first();
+
+      if (input && input.length) {
+        valor = input.val() || "";
+      }
+    }
+  });
+
+  return String(valor || "").trim();
+}
+
+function extraerNombreCompletoDesdeEditHtml(html) {
+  const $ = cheerio.load(html);
+
+  let nombre = extraerValorInputPorLabel($, "Nombre Completo");
+
+  if (nombre) return nombre;
+
+  const posiblesSelectores = [
+    'input[name="nombre_completo"]',
+    'input[name="nombre"]',
+    'input[name="full_name"]',
+    'input[id="nombre_completo"]',
+    'input[id="nombre"]',
+    'input[id="full_name"]',
+  ];
+
+  for (const selector of posiblesSelectores) {
+    const value = $(selector).val();
+
+    if (value) {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+}
+
+const nombresCache = new Map();
+
+async function obtenerNombreCompletoUsuario(client, usuario) {
+  const id = String(usuario.id || "").trim();
+
+  if (!id) {
+    return usuario.usuario || "";
+  }
+
+  const nombreCache = await getCachedName(id);
+
+  if (nombreCache) {
+    return nombreCache;
+  }
+
+  try {
+    const response = await client.get(`/admin/edit/${id}`);
+    const nombre = extraerNombreCompletoDesdeEditHtml(response.data);
+
+    const nombreFinal = nombre || usuario.usuario || "";
+
+    if (nombreFinal) {
+      await saveCachedName({
+        id,
+        documento: usuario.documento,
+        nombre: nombreFinal,
+        empresa: usuario.empresa,
+      });
+    }
+
+    return nombreFinal;
+  } catch (error) {
+    console.warn(
+      `⚠️ No se pudo leer nombre completo del usuario ID ${id}:`,
+      error.message
+    );
+
+    return usuario.usuario || "";
+  }
+}
+
+async function enriquecerUsuariosConNombre(client, usuarios) {
+  const resultado = [];
+
+  for (const usuario of usuarios) {
+    const nombreCompleto = await obtenerNombreCompletoUsuario(client, usuario);
+
+    resultado.push({
+      ...usuario,
+      nombre: nombreCompleto,
+    });
+  }
+
+  return resultado;
+}
+
 router.get("/empresa", async (req, res) => {
   try {
     if (!ADMIN_BASE_URL || !ADMIN_USERNAME || !ADMIN_PASSWORD) {
@@ -376,23 +484,25 @@ router.get("/empresa", async (req, res) => {
     const usuarios = extraerUsuariosDesdeHtml(response.data);
     const rango = obtenerRangoFecha(req.query);
 
-    const filtrados = usuarios
-      .filter((u) => {
-        if (esAdminEmpresa(u)) return false;
+    const filtradosBase = usuarios.filter((u) => {
+  if (esAdminEmpresa(u)) return false;
 
-        const empresa = normalizarTexto(u.empresa);
-        const coincideEmpresa = empresa.includes(q);
-        const cumpleFecha = cumpleRangoFecha(u, rango);
+  const empresa = normalizarTexto(u.empresa);
+  const coincideEmpresa = empresa.includes(q);
+  const cumpleFecha = cumpleRangoFecha(u, rango);
 
-        return coincideEmpresa && cumpleFecha;
-      })
-      .map(limpiarUsuarioParaFrontend);
+  return coincideEmpresa && cumpleFecha;
+});
 
-    return res.json({
-      ok: true,
-      total: filtrados.length,
-      usuarios: filtrados,
-    });
+const filtradosConNombre = await enriquecerUsuariosConNombre(client, filtradosBase);
+
+const filtrados = filtradosConNombre.map(limpiarUsuarioParaFrontend);
+
+return res.json({
+  ok: true,
+  total: filtrados.length,
+  usuarios: filtrados,
+});
   } catch (error) {
     console.error("❌ Error buscando usuarios por empresa:", error.message);
 

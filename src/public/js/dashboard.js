@@ -731,7 +731,7 @@ function mostrarPanelEmpresa(usuarios) {
     `;
   } else {
     body.innerHTML = usuariosEmpresaFiltrados.map((u) => {
-      const nombre = u.usuario || "";
+      const nombre = u.nombre || u.usuario || "";
       const cedula = u.documento || "";
       const empresa = u.empresa || "";
       const primerIngreso = u.primer_ingreso === "—" ? "" : (u.primer_ingreso || "");
@@ -802,7 +802,7 @@ function descargarExcelEmpresa() {
       "Link certificado"
     ],
     ...usuariosEmpresaFiltrados.map((u) => [
-      u.usuario || "",
+      u.nombre || u.usuario || "",
       u.documento || "",
       u.empresa || "",
       u.primer_ingreso === "—" ? "" : (u.primer_ingreso || ""),
