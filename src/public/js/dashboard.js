@@ -233,12 +233,12 @@
             tooltip: {
               callbacks: {
                 label: function(context) {
-                  const label = context.label || "";
-                  const value = Number(context.raw || 0);
-                  const total = context.dataset.data.reduce((a, b) => Number(a) + Number(b), 0);
-                  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-                  return `${label}: ${value} (${pct}%)`;
-                }
+  const label = context.label || "";
+  const value = Number(context.raw || 0);
+  const total = context.dataset.data.reduce((a, b) => Number(a) + Number(b), 0);
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return `${label}: ${value} (${pct}%)`;
+}
               }
             }
           }
@@ -468,8 +468,6 @@ if (window.lastLogsFilterKey !== currentLogsFilterKey) {
       return;
     }
 
-    usuariosCertificadosCache = Array.isArray(data.usuarios) ? data.usuarios : [];
-
     const m = data.metricas || {};
 
     const setText = (id, value) => {
@@ -477,20 +475,17 @@ if (window.lastLogsFilterKey !== currentLogsFilterKey) {
       if (el) el.textContent = formatNumber(value);
     };
 
+    setText("totalUsuariosCertificados", m.total_usuarios);
+    setText("m-cert", m.certificados_emitidos);
+    setText("totalFacturados", m.total_facturados);
+    setText("totalNoFacturados", m.total_no_facturados);
+
     const modo = document.getElementById("searchMode")?.value || "bot";
-const q = normalizarTextoEmpresa(document.getElementById("qInput")?.value || "");
+    const q = document.getElementById("qInput")?.value || "";
 
-const usuariosCurso = usuariosCertificadosCache.filter((u) => {
-  return !esUsuarioAdministradorEmpresa(u);
-});
-
-if (modo === "empresa" && q.length >= 3) {
-  revisarFiltroEmpresa();
-} else {
-  actualizarMetricasCertificadosDesdeUsuarios(usuariosCurso);
-}
-
-    revisarFiltroEmpresa();
+    if (modo === "empresa" && q.trim().length >= 3) {
+      revisarFiltroEmpresa();
+    }
   } catch (error) {
     console.error("❌ Error conectando con /api/admin-certificados:", error);
   }
@@ -630,33 +625,55 @@ function usuarioCumpleFiltroFechaEmpresa(u) {
   return true;
 }
 
-function revisarFiltroEmpresa() {
+async function revisarFiltroEmpresa() {
   const modo = document.getElementById("searchMode")?.value || "bot";
-  const q = normalizarTextoEmpresa(document.getElementById("qInput")?.value || "");
+  const q = document.getElementById("qInput")?.value || "";
 
   if (modo !== "empresa") {
     cerrarPanelEmpresa(false);
     return;
   }
 
-  if (!q || q.length < 3) {
+  if (!q.trim() || q.trim().length < 3) {
     cerrarPanelEmpresa(false);
     return;
   }
 
-  const resultados = usuariosCertificadosCache.filter((u) => {
-    if (esUsuarioAdministradorEmpresa(u)) {
-      return false;
+  try {
+    const params = new URLSearchParams();
+
+    params.set("q", q.trim());
+
+    const range = document.getElementById("rangeSelect")?.value || "all";
+    const from = document.getElementById("fromInput")?.value || "";
+    const to = document.getElementById("toInput")?.value || "";
+
+    params.set("range", range);
+
+    if (range === "custom") {
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
     }
 
-    const empresa = normalizarTextoEmpresa(u.empresa);
-    const coincideEmpresa = empresa.includes(q);
-    const cumpleFecha = usuarioCumpleFiltroFechaEmpresa(u);
+    const res = await fetch(`/api/admin-certificados/empresa?${params.toString()}`, {
+      cache: "no-store",
+    });
 
-    return coincideEmpresa && cumpleFecha;
-  });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
 
-  mostrarPanelEmpresa(resultados);
+    const data = await res.json();
+
+    if (!data.ok) {
+      console.error("❌ Error buscando empresa:", data);
+      return;
+    }
+
+    mostrarPanelEmpresa(data.usuarios || []);
+  } catch (error) {
+    console.error("❌ Error consultando empresa:", error);
+  }
 }
 
 function actualizarMetricasCertificadosDesdeUsuarios(usuarios) {
@@ -756,14 +773,11 @@ function cerrarPanelEmpresa(limpiarBusqueda = true) {
 
   usuariosEmpresaFiltrados = [];
 
-    actualizarMetricasCertificadosDesdeUsuarios(
-  usuariosCertificadosCache.filter((u) => !esUsuarioAdministradorEmpresa(u))
-);
-    
   if (limpiarBusqueda) {
     const input = document.getElementById("qInput");
     if (input) input.value = "";
     loadStats();
+    cargarMetricasCertificados();
   }
 }
 

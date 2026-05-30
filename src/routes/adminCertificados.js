@@ -174,6 +174,144 @@ function calcularMetricas(usuarios) {
   };
 }
 
+function normalizarTexto(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function esAdminEmpresa(usuario) {
+  const tipoDoc = String(usuario.tipo_doc || "").toUpperCase().trim();
+  const rol = String(usuario.rol_detectado || "").toLowerCase().trim();
+
+  return tipoDoc === "NIT" || rol === "administrador";
+}
+
+function parseFechaPanel(value) {
+  if (!value || value === "—") return null;
+
+  const texto = String(value).trim();
+
+  const match = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const year = Number(match[3]);
+  const hour = Number(match[4] || 0);
+  const minute = Number(match[5] || 0);
+
+  const date = new Date(year, month, day, hour, minute, 0);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date;
+}
+
+function inicioDia(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function finDia(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function obtenerRangoFecha(query) {
+  const range = query.range || "all";
+
+  const hoy = new Date();
+  const hoyInicio = inicioDia(hoy);
+  const hoyFin = finDia(hoy);
+
+  if (range === "all") return null;
+
+  if (range === "today") {
+    return {
+      desde: hoyInicio,
+      hasta: hoyFin,
+    };
+  }
+
+  if (range === "7d") {
+    const desde = inicioDia(hoy);
+    desde.setDate(desde.getDate() - 6);
+
+    return {
+      desde,
+      hasta: hoyFin,
+    };
+  }
+
+  if (range === "30d") {
+    const desde = inicioDia(hoy);
+    desde.setDate(desde.getDate() - 29);
+
+    return {
+      desde,
+      hasta: hoyFin,
+    };
+  }
+
+  if (range === "custom") {
+    let desde = null;
+    let hasta = null;
+
+    if (query.from) {
+      const [year, month, day] = String(query.from).split("-").map(Number);
+      desde = inicioDia(new Date(year, month - 1, day));
+    }
+
+    if (query.to) {
+      const [year, month, day] = String(query.to).split("-").map(Number);
+      hasta = finDia(new Date(year, month - 1, day));
+    }
+
+    return {
+      desde,
+      hasta,
+    };
+  }
+
+  return null;
+}
+
+function cumpleRangoFecha(usuario, rango) {
+  if (!rango) return true;
+
+  const fechaUltimo = parseFechaPanel(usuario.ultimo_ingreso);
+  const fechaPrimer = parseFechaPanel(usuario.primer_ingreso);
+
+  const fecha = fechaUltimo || fechaPrimer;
+
+  if (!fecha) return false;
+
+  if (rango.desde && fecha < rango.desde) return false;
+  if (rango.hasta && fecha > rango.hasta) return false;
+
+  return true;
+}
+
+function limpiarUsuarioParaFrontend(usuario) {
+  return {
+    id: usuario.id || "",
+    usuario: usuario.usuario || "",
+    documento: usuario.documento || "",
+    empresa: usuario.empresa || "",
+    primer_ingreso: usuario.primer_ingreso === "—" ? "" : usuario.primer_ingreso || "",
+    ultimo_ingreso: usuario.ultimo_ingreso === "—" ? "" : usuario.ultimo_ingreso || "",
+    completado: usuario.completado === true,
+    certificado_url: usuario.certificado_url || "",
+    facturado: usuario.facturado === true,
+  };
+}
+
 router.get("/", async (req, res) => {
   try {
     if (!ADMIN_BASE_URL || !ADMIN_USERNAME || !ADMIN_PASSWORD) {
@@ -194,17 +332,73 @@ router.get("/", async (req, res) => {
     const metricas = calcularMetricas(usuarios);
 
     return res.json({
-      ok: true,
-      total: usuarios.length,
-      metricas,
-      usuarios,
-    });
+  ok: true,
+  total: usuarios.length,
+  metricas,
+});
   } catch (error) {
     console.error("❌ Error leyendo panel admin certificados:", error.message);
 
     return res.status(500).json({
       ok: false,
       error: "No se pudo leer la información del panel admin.",
+      detail: error.message,
+    });
+  }
+});
+
+router.get("/empresa", async (req, res) => {
+  try {
+    if (!ADMIN_BASE_URL || !ADMIN_USERNAME || !ADMIN_PASSWORD) {
+      return res.status(500).json({
+        ok: false,
+        error:
+          "Faltan variables ADMIN_BASE_URL, ADMIN_USERNAME o ADMIN_PASSWORD en Render.",
+      });
+    }
+
+    const q = normalizarTexto(req.query.q || "");
+
+    if (!q || q.length < 3) {
+      return res.json({
+        ok: true,
+        total: 0,
+        usuarios: [],
+      });
+    }
+
+    const client = crearCliente();
+
+    await loginAdmin(client);
+
+    const response = await client.get(ADMIN_PANEL_PATH);
+
+    const usuarios = extraerUsuariosDesdeHtml(response.data);
+    const rango = obtenerRangoFecha(req.query);
+
+    const filtrados = usuarios
+      .filter((u) => {
+        if (esAdminEmpresa(u)) return false;
+
+        const empresa = normalizarTexto(u.empresa);
+        const coincideEmpresa = empresa.includes(q);
+        const cumpleFecha = cumpleRangoFecha(u, rango);
+
+        return coincideEmpresa && cumpleFecha;
+      })
+      .map(limpiarUsuarioParaFrontend);
+
+    return res.json({
+      ok: true,
+      total: filtrados.length,
+      usuarios: filtrados,
+    });
+  } catch (error) {
+    console.error("❌ Error buscando usuarios por empresa:", error.message);
+
+    return res.status(500).json({
+      ok: false,
+      error: "No se pudo buscar la empresa.",
       detail: error.message,
     });
   }
