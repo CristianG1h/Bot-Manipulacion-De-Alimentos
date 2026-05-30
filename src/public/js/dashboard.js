@@ -925,8 +925,9 @@ function initRangeDropdown() {
   const label = document.getElementById("rangeDropdownLabel");
   const hiddenInput = document.getElementById("rangeSelect");
   const options = document.querySelectorAll("#rangeDropdownMenu .custom-option");
+}
 
-  function aplicarFiltroPrincipal() {
+function aplicarFiltroPrincipal() {
   const modo = document.getElementById("searchMode")?.value || "bot";
 
   if (modo === "empresa") {
@@ -935,7 +936,6 @@ function initRangeDropdown() {
     cerrarPanelEmpresa(false);
     loadStats();
   }
-}
 
   btn.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -991,15 +991,16 @@ document.getElementById("toInput").addEventListener("change", () => {
     document.getElementById("qInput").addEventListener("input", () => {
   clearTimeout(debounceTimer);
 
-  document.getElementById("searchMode")?.addEventListener("change", () => {
-  const modo = document.getElementById("searchMode")?.value || "bot";
+  debounceTimer = setTimeout(() => {
+    const modo = document.getElementById("searchMode")?.value || "bot";
 
-  if (modo === "empresa") {
-    revisarFiltroEmpresa();
-  } else {
-    cerrarPanelEmpresa(false);
-    loadStats();
-  }
+    if (modo === "empresa") {
+      revisarFiltroEmpresa();
+    } else {
+      cerrarPanelEmpresa(false);
+      loadStats();
+    }
+  }, 500);
 });
 
   debounceTimer = setTimeout(() => {
