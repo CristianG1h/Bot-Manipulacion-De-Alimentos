@@ -633,13 +633,6 @@ if (window.lastLogsFilterKey !== currentLogsFilterKey) {
     setText("m-cert", m.certificados_emitidos);
     setText("totalFacturados", m.total_facturados);
     setText("totalNoFacturados", m.total_no_facturados);
-
-    const modo = document.getElementById("searchMode")?.value || "bot";
-    const q = document.getElementById("qInput")?.value || "";
-
-    if (modo === "empresa" && q.trim().length >= 3) {
-      revisarFiltroEmpresa();
-    }
   } catch (error) {
     console.error("❌ Error conectando con /api/admin-certificados:", error);
   }
@@ -1367,10 +1360,43 @@ flatpickr("#chartToInput", {
 
     initRangeDropdown();
 toggleCustomFields();
+// Carga inicial.
 loadStats();
+
 cargarMetricasCertificados();
-setInterval(loadStats, 15000);
-setInterval(cargarMetricasCertificados, 15000);
+
+
+// Estadísticas del bot:
+// cada 15 segundos,
+// solamente si la pestaña está visible.
+setInterval(() => {
+  if (!document.hidden) {
+    loadStats();
+  }
+}, 15000);
+
+
+// Certificados:
+// cada 60 segundos,
+// solamente si la pestaña está visible.
+setInterval(() => {
+  if (!document.hidden) {
+    cargarMetricasCertificados();
+  }
+}, 60000);
+
+
+// Cuando el usuario vuelve a la pestaña,
+// actualizamos inmediatamente.
+document.addEventListener(
+  "visibilitychange",
+  () => {
+    if (!document.hidden) {
+      loadStats();
+      cargarMetricasCertificados();
+    }
+  }
+);
 
 window.addEventListener("resize", () => {
   if (lineChart) lineChart.resize();

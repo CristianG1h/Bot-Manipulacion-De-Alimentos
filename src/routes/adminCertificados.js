@@ -21,6 +21,28 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const ADMIN_USER_FIELD = process.env.ADMIN_USER_FIELD || "username";
 const ADMIN_PASS_FIELD = process.env.ADMIN_PASS_FIELD || "password";
 
+// ─────────────────────────────────────────────
+// CACHÉ DEL PANEL ADMINISTRATIVO
+// ─────────────────────────────────────────────
+
+// Tiempo de vida de la caché: 5 minutos.
+const PANEL_CACHE_TTL_MS =
+  5 * 60 * 1000;
+
+
+// Datos almacenados en memoria.
+let panelCache = {
+  usuarios: [],
+  metricas: null,
+  actualizadoEn: 0,
+};
+
+
+// Promise compartida para impedir que varios
+// navegadores ejecuten el mismo scraping
+// simultáneamente.
+let sincronizacionPanelEnCurso = null;
+
 function crearCliente() {
   const jar = new CookieJar();
 
@@ -208,6 +230,164 @@ function calcularMetricas(usuarios) {
   };
 }
 
+// ─────────────────────────────────────────────
+// SINCRONIZACIÓN CONTROLADA DEL PANEL
+// ─────────────────────────────────────────────
+
+async function sincronizarPanelCertificados() {
+  // Si ya existe una sincronización en curso,
+  // todos los requests esperan la misma Promise.
+  if (sincronizacionPanelEnCurso) {
+    console.log(
+      "⏳ Sincronización de certificados ya en curso — reutilizando proceso"
+    );
+
+    return sincronizacionPanelEnCurso;
+  }
+
+
+  sincronizacionPanelEnCurso =
+    (async () => {
+      console.log(
+        "🔄 Sincronizando panel administrativo de certificados..."
+      );
+
+
+      const client =
+        crearCliente();
+
+
+      await loginAdmin(
+        client
+      );
+
+
+      const response =
+        await client.get(
+          ADMIN_PANEL_PATH
+        );
+
+
+      const usuarios =
+        extraerUsuariosDesdeHtml(
+          response.data
+        );
+
+
+      const metricas =
+        calcularMetricas(
+          usuarios
+        );
+
+
+      panelCache = {
+        usuarios,
+        metricas,
+        actualizadoEn:
+          Date.now(),
+      };
+
+
+      console.log(
+        `✅ Panel certificados sincronizado: ${usuarios.length} usuarios`
+      );
+
+
+      return {
+        usuarios,
+        metricas,
+        actualizadoEn:
+          panelCache.actualizadoEn,
+
+        stale:
+          false,
+      };
+    })();
+
+
+  try {
+    return await sincronizacionPanelEnCurso;
+  } finally {
+    sincronizacionPanelEnCurso =
+      null;
+  }
+}
+
+
+/**
+ * Devuelve la caché vigente.
+ *
+ * Si está vencida:
+ * intenta sincronizar.
+ *
+ * Si la plataforma externa falla pero existe
+ * una caché anterior, devuelve los últimos
+ * datos conocidos.
+ */
+async function obtenerPanelCacheado() {
+  const ahora =
+    Date.now();
+
+
+  const tieneCache =
+    panelCache.actualizadoEn > 0;
+
+
+  const cacheVigente =
+    tieneCache &&
+    ahora - panelCache.actualizadoEn <
+      PANEL_CACHE_TTL_MS;
+
+
+  if (cacheVigente) {
+    return {
+      usuarios:
+        panelCache.usuarios,
+
+      metricas:
+        panelCache.metricas,
+
+      actualizadoEn:
+        panelCache.actualizadoEn,
+
+      stale:
+        false,
+    };
+  }
+
+
+  try {
+    return await sincronizarPanelCertificados();
+  } catch (error) {
+    // La plataforma externa falló, pero tenemos
+    // una copia anterior disponible.
+    if (tieneCache) {
+      console.warn(
+        "⚠️ Falló sincronización externa — usando caché anterior:",
+        error.message
+      );
+
+
+      return {
+        usuarios:
+          panelCache.usuarios,
+
+        metricas:
+          panelCache.metricas,
+
+        actualizadoEn:
+          panelCache.actualizadoEn,
+
+        stale:
+          true,
+      };
+    }
+
+
+    throw error;
+  }
+}
+
 function normalizarTexto(value) {
   return String(value || "")
     .toLowerCase()
@@ -349,36 +529,63 @@ function limpiarUsuarioParaFrontend(usuario) {
 
 router.get("/", async (req, res) => {
   try {
-    if (!ADMIN_BASE_URL || !ADMIN_USERNAME || !ADMIN_PASSWORD) {
-      return res.status(500).json({
-        ok: false,
-        error:
-          "Faltan variables ADMIN_BASE_URL, ADMIN_USERNAME o ADMIN_PASSWORD en Render.",
-      });
+    if (
+      !ADMIN_BASE_URL ||
+      !ADMIN_USERNAME ||
+      !ADMIN_PASSWORD
+    ) {
+      return res
+        .status(500)
+        .json({
+          ok: false,
+
+          error:
+            "Faltan variables ADMIN_BASE_URL, ADMIN_USERNAME o ADMIN_PASSWORD en Render.",
+        });
     }
 
-    const client = crearCliente();
 
-    await loginAdmin(client);
+    const resultado =
+      await obtenerPanelCacheado();
 
-    const response = await client.get(ADMIN_PANEL_PATH);
-
-    const usuarios = extraerUsuariosDesdeHtml(response.data);
-    const metricas = calcularMetricas(usuarios);
 
     return res.json({
-  ok: true,
-  total: usuarios.length,
-  metricas,
-});
-  } catch (error) {
-    console.error("❌ Error leyendo panel admin certificados:", error.message);
+      ok:
+        true,
 
-    return res.status(500).json({
-      ok: false,
-      error: "No se pudo leer la información del panel admin.",
-      detail: error.message,
+      total:
+        resultado.usuarios.length,
+
+      metricas:
+        resultado.metricas,
+
+      actualizado_en:
+        new Date(
+          resultado.actualizadoEn
+        ).toISOString(),
+
+      cache_desactualizada:
+        resultado.stale,
     });
+  } catch (error) {
+    console.error(
+      "❌ Error leyendo panel admin certificados:",
+      error.message
+    );
+
+
+    return res
+      .status(500)
+      .json({
+        ok:
+          false,
+
+        error:
+          "No se pudo leer la información del panel admin.",
+
+        detail:
+          error.message,
+      });
   }
 });
 
@@ -469,17 +676,73 @@ async function obtenerNombreCompletoUsuario(client, usuario) {
   }
 }
 
-async function enriquecerUsuariosConNombre(client, usuarios) {
+async function enriquecerUsuariosConNombre(
+  usuarios
+) {
   const resultado = [];
 
+  let client = null;
+  let clienteAutenticado = false;
+
+
   for (const usuario of usuarios) {
-    const nombreCompleto = await obtenerNombreCompletoUsuario(client, usuario);
+    const id =
+      String(
+        usuario.id || ""
+      )
+        .trim();
+
+
+    // Primero revisar caché persistente.
+    const nombreCache =
+      id
+        ? await getCachedName(id)
+        : null;
+
+
+    if (nombreCache) {
+      resultado.push({
+        ...usuario,
+        nombre:
+          nombreCache,
+      });
+
+      continue;
+    }
+
+
+    // Solo hacer login cuando realmente
+    // encontremos un nombre faltante.
+    if (!client) {
+      client =
+        crearCliente();
+    }
+
+
+    if (!clienteAutenticado) {
+      await loginAdmin(
+        client
+      );
+
+      clienteAutenticado =
+        true;
+    }
+
+
+    const nombreCompleto =
+      await obtenerNombreCompletoUsuario(
+        client,
+        usuario
+      );
+
 
     resultado.push({
       ...usuario,
-      nombre: nombreCompleto,
+      nombre:
+        nombreCompleto,
     });
   }
+
 
   return resultado;
 }
@@ -504,13 +767,10 @@ router.get("/empresa", async (req, res) => {
       });
     }
 
-    const client = crearCliente();
-
-    await loginAdmin(client);
-
-    const response = await client.get(ADMIN_PANEL_PATH);
-
-    const usuarios = extraerUsuariosDesdeHtml(response.data);
+   const resultadoCache =
+  await obtenerPanelCacheado();
+const usuarios =
+  resultadoCache.usuarios;
     const rango = obtenerRangoFecha(req.query);
 
     const filtradosBase = usuarios.filter((u) => {
@@ -523,7 +783,10 @@ router.get("/empresa", async (req, res) => {
   return coincideEmpresa && cumpleFecha;
 });
 
-const filtradosConNombre = await enriquecerUsuariosConNombre(client, filtradosBase);
+const filtradosConNombre =
+  await enriquecerUsuariosConNombre(
+    filtradosBase
+  );
 
 const filtrados = filtradosConNombre.map(limpiarUsuarioParaFrontend);
 
