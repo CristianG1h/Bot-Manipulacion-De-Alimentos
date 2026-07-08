@@ -131,9 +131,31 @@ async function crearNotaPrivadaChatwoot(conversationId, contenido) {
 router.get("/webhook", (req, res) => res.status(200).send("OK"));
 
 router.post("/webhook", async (req, res) => {
-  if (WEBHOOK_TOKEN && req.query.token !== WEBHOOK_TOKEN) {
-    console.warn("⚠️ Webhook rechazado — token inválido o ausente");
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  // Fail-closed:
+  // si el servidor no tiene token configurado,
+  // ningún webhook puede ser procesado.
+  if (!WEBHOOK_TOKEN) {
+    console.error(
+      "❌ Webhook deshabilitado: falta CHATWOOT_WEBHOOK_TOKEN"
+    );
+
+    return res.status(503).json({
+      ok: false,
+      error: "Webhook no configurado",
+    });
+  }
+
+  const receivedToken = String(req.query.token || "");
+
+  if (receivedToken !== WEBHOOK_TOKEN) {
+    console.warn(
+      "⚠️ Webhook rechazado — token inválido o ausente"
+    );
+
+    return res.status(401).json({
+      ok: false,
+      error: "Unauthorized",
+    });
   }
 
   res.status(200).json({ ok: true });
