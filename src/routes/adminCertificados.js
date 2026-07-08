@@ -133,38 +133,38 @@ function extraerUsuariosDesdeHtml(html) {
   const usuarios = [];
 
   $("#usersTable tbody tr").each((_, row) => {
-    const cells = $(row).find("td");
+  const cells = $(row).find("td");
 
-    if (!cells || cells.length < 12) return;
+  if (!cells || cells.length < 12) return;
 
-    const certificadoUrl = $(cells[10]).find("a").attr("href") || null;
+  const certificadoHref =
+    $(cells[10]).find("a").attr("href") || "";
 
-    const certificadoHref =
-  $(cells[10]).find("a").attr("href") || "";
+  const certificadoUrl =
+    normalizarUrlCertificado(certificadoHref);
 
-const certificadoUrl =
-  normalizarUrlCertificado(certificadoHref);
+  const usuario = {
+    id: limpiarTexto($(cells[0]).text()),
+    usuario: limpiarTexto($(cells[1]).text()),
+    documento: limpiarTexto($(cells[2]).text()),
+    tipo_doc: limpiarTexto($(cells[3]).text()),
+    empresa: limpiarTexto($(cells[4]).text()),
+    facturado: convertirSiNo($(cells[5]).text()),
+    primer_ingreso: limpiarTexto($(cells[6]).text()),
+    ultimo_ingreso: limpiarTexto($(cells[7]).text()),
+    celular: limpiarTexto($(cells[8]).text()),
+    paso: limpiarTexto($(cells[9]).text()),
+    certificado_url: certificadoUrl,
+    completado: convertirSiNo($(cells[11]).text()),
+    habilitado: limpiarTexto($(cells[12]).text())
+      .toLowerCase()
+      .includes("activo"),
+  };
 
-    const usuario = {
-      id: limpiarTexto($(cells[0]).text()),
-      usuario: limpiarTexto($(cells[1]).text()),
-      documento: limpiarTexto($(cells[2]).text()),
-      tipo_doc: limpiarTexto($(cells[3]).text()),
-      empresa: limpiarTexto($(cells[4]).text()),
-      facturado: convertirSiNo($(cells[5]).text()),
-      primer_ingreso: limpiarTexto($(cells[6]).text()),
-      ultimo_ingreso: limpiarTexto($(cells[7]).text()),
-      celular: limpiarTexto($(cells[8]).text()),
-      paso: limpiarTexto($(cells[9]).text()),
-      certificado_url: certificadoUrl,
-      completado: convertirSiNo($(cells[11]).text()),
-      habilitado: limpiarTexto($(cells[12]).text()).toLowerCase().includes("activo"),
-    };
+  usuario.rol_detectado = detectarRol(usuario);
 
-    usuario.rol_detectado = detectarRol(usuario);
-
-    usuarios.push(usuario);
-  });
+  usuarios.push(usuario);
+});
 
   return usuarios;
 }
