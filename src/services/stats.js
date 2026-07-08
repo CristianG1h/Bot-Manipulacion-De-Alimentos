@@ -830,18 +830,19 @@ const Stats = {
     });
   },
 
-  accesoEnviado(nombre = "usuario") {
-    stats.mensajesEnviados++;
-    stats.accesosEnviados++;
-    sumarKeyword("acceso");
+  accesoEnviado() {
+  stats.mensajesEnviados++;
+  stats.accesosEnviados++;
 
-    registrarInteraccion({
-      tipo: "acceso",
-      detalle: `Acceso enviado a ${nombre}`,
-      estado: "ok",
-      keywords: ["acceso"],
-    });
-  },
+  sumarKeyword("acceso");
+
+  registrarInteraccion({
+    tipo: "acceso",
+    detalle: "Acceso enviado correctamente",
+    estado: "ok",
+    keywords: ["acceso"],
+  });
+},
 
   certificadoEnviado(nombre = "usuario") {
     stats.mensajesEnviados++;

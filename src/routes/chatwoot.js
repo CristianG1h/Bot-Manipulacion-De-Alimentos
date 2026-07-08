@@ -676,7 +676,15 @@ async function sendCourseInfo(to, conversationId = null) {
   await sendText(to, msg);
   Stats.instructivoEnviado(to);
 
-  await crearNotaPrivadaChatwoot(conversationId, msg);
+  await crearNotaPrivadaChatwoot(
+  conversationId,
+  `🎓 *Información del curso enviada automáticamente*
+
+📚 Curso: Manipulación de Alimentos
+📌 Estado: información enviada correctamente
+
+🔐 El enlace y las credenciales fueron enviados directamente al usuario por WhatsApp y no se almacenan en esta nota.`
+);
 }
 
 async function sendRecibidoConfirmacion(to, conversationId = null) {

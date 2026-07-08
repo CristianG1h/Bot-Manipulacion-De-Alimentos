@@ -229,36 +229,55 @@ async function obtenerOCrearConversacionChatwoot(phoneE164, name) {
   return await crearConversacionChatwoot(phoneE164, contactId);
 }
 
-async function crearNotaAccesoCurso({ phoneE164, name, user, password }) {
+async function crearNotaAccesoCurso({
+  phoneE164,
+  name,
+}) {
   if (!chatwootActivo()) {
-    console.log("⚠️ Chatwoot no configurado para nota privada de acceso");
+    console.log(
+      "⚠️ Chatwoot no configurado para nota privada de acceso"
+    );
+
     return;
   }
 
+
   try {
     const cfg = chatwootConfig();
-    const conversationId = await obtenerOCrearConversacionChatwoot(phoneE164, name);
+
+    const conversationId =
+      await obtenerOCrearConversacionChatwoot(
+        phoneE164,
+        name
+      );
+
 
     if (!conversationId) {
-      console.log("⚠️ No se pudo crear/encontrar conversación en Chatwoot");
+      console.log(
+        "⚠️ No se pudo crear/encontrar conversación en Chatwoot"
+      );
+
       return;
     }
 
-    const contenido = `✅ *Acceso a plataforma enviado automáticamente*
+
+    const contenido =
+      `✅ *Acceso a plataforma enviado automáticamente*
 
 👤 Nombre: ${name}
-📱 WhatsApp: ${phoneE164}
-🪪 Usuario: ${user}
-🔐 Contraseña: ${password}
 
 📚 Curso: Manipulación de Alimentos
 📩 Plantilla: acceso_curso1
-📌 Estado: enviado correctamente`;
+📌 Estado: enviado correctamente
+
+🔐 Las credenciales fueron enviadas directamente al usuario por WhatsApp y no se almacenan en esta nota.`;
+
 
     await chatwootRequest(
       `/api/v1/accounts/${cfg.accountId}/conversations/${conversationId}/messages`,
       {
         method: "POST",
+
         body: {
           content: contenido,
           message_type: "outgoing",
@@ -267,9 +286,15 @@ async function crearNotaAccesoCurso({ phoneE164, name, user, password }) {
       }
     );
 
-    console.log("📝 Nota privada de acceso creada en Chatwoot");
+
+    console.log(
+      "📝 Nota privada de acceso creada en Chatwoot"
+    );
   } catch (error) {
-    console.error("⚠️ Error creando nota privada de acceso:", error.message);
+    console.error(
+      "⚠️ Error creando nota privada de acceso:",
+      error.message
+    );
   }
 }
 
@@ -343,14 +368,12 @@ router.post("/access", requireApiKey, async (req, res) => {
       });
     }
 
-    Stats.accesoEnviado(String(name));
+    Stats.accesoEnviado();
 
     await crearNotaAccesoCurso({
-      phoneE164: norm.e164,
-      name: String(name),
-      user: String(user),
-      password: String(password),
-    });
+  phoneE164: norm.e164,
+  name: String(name),
+});
 
     return res.json({ ok: true });
   } catch (e) {
