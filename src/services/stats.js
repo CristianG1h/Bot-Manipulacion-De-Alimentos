@@ -490,7 +490,12 @@ function buildWhere(query = {}) {
 
 function buildChartWhere(query = {}) {
   const params = [];
-  const where = [];
+
+  // Los duplicados se conservan para auditoría,
+  // pero no representan actividad real.
+  const where = [
+    `tipo <> 'duplicado'`
+  ];
 
   const { start, end } = buildChartDateFilter(query);
 
@@ -857,16 +862,26 @@ const Stats = {
     });
   },
 
-  duplicadoIgnorado(id = "") {
-    stats.duplicadosIgnorados++;
+  duplicadoIgnorado(id = "", waId = "") {
+  stats.duplicadosIgnorados++;
 
-    registrarInteraccion({
-      tipo: "duplicado",
-      detalle: `Duplicado ignorado ${id}`.trim(),
-      estado: "warn",
-      keywords: ["duplicado"],
-    });
-  },
+
+  // Conservamos el evento en PostgreSQL para auditoría
+  // y para mantener el contador de duplicados.
+  registrarEventoDb({
+    waId,
+    tipo: "duplicado",
+    detalle: `Duplicado ignorado ${id}`.trim(),
+    estado: "warn",
+    keywords: ["duplicado"],
+  });
+
+
+  // Guardar contador en memoria/persistencia,
+  // pero NO llamar registrarInteraccion(),
+  // porque aumentaría actividad diaria.
+  saveStatsSoon();
+},
 
   rateLimitado(waId) {
     stats.rateLimitados++;

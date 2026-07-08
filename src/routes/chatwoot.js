@@ -417,20 +417,71 @@ if (esOutgoing) {
 }
 
 
-// El bot solamente procesa contenido del cliente.
-if (!esIncoming) {
+// ─────────────────────────────────────────────
+// DEDUPLICACIÓN
+// Debe ocurrir antes de estadísticas y rate limit.
+// ─────────────────────────────────────────────
+
+const messageId =
+  body.id
+    ? String(body.id)
+    : null;
+
+
+if (messageId) {
+  if (processedIds.has(messageId)) {
+    console.log(
+      "⏭️ Duplicado ignorado:",
+      messageId
+    );
+
+    Stats.duplicadoIgnorado(
+      messageId,
+      wa_id
+    );
+
+    return;
+  }
+
+  // Se registra inmediatamente para impedir
+  // procesamiento simultáneo del mismo evento.
+  processedIds.add(messageId);
+}
+
+
+// ─────────────────────────────────────────────
+// RESPUESTA DEL ASESOR DESDE CHATWOOT
+// ─────────────────────────────────────────────
+
+if (esOutgoing) {
+  const senderType = String(
+    body.sender?.type || ""
+  ).toLowerCase();
+
+  if (senderType !== "user") {
+    console.log(
+      `⏭️ Mensaje outgoing no humano ignorado. sender.type=${senderType || "desconocido"}`
+    );
+
+    return;
+  }
+
+  if (advisorMode.has(wa_id)) {
+    registrarRespuestaAsesor(wa_id);
+  }
+
   return;
 }
 
 
-console.log(`📩 Mensaje de ${wa_id}`);
-
-
-Stats.mensajeRecibido(wa_id);
+// El bot solamente procesa mensajes del cliente.
+if (!esIncoming) {
+  return;}
 
 
 // ─────────────────────────────────────────────
 // RATE LIMIT
+// Solo mensajes únicos llegan aquí.
 // ─────────────────────────────────────────────
 
 const rl = isRateLimited(wa_id);
@@ -451,30 +502,15 @@ if (rl.limited) {
 
 
 // ─────────────────────────────────────────────
-// DEDUPLICACIÓN
+// ESTADÍSTICAS
+// Solo mensajes únicos y aceptados.
 // ─────────────────────────────────────────────
 
-const messageId =
-  body.id
-    ? String(body.id)
-    : null;
+console.log(
+  `📩 Mensaje válido de ${wa_id}`
+);
 
-
-if (messageId) {
-  if (processedIds.has(messageId)) {
-    console.log(
-      "⏭️ Duplicado ignorado:",
-      messageId
-    );
-
-    Stats.duplicadoIgnorado(messageId);
-
-    return;
-  }
-
-  processedIds.add(messageId);
-}
-
+Stats.mensajeRecibido(wa_id);
 
 // ─────────────────────────────────────────────
 // BOTONES
