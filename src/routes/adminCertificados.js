@@ -105,6 +105,29 @@ async function loginAdmin(client) {
   });
 }
 
+function normalizarUrlCertificado(valor) {
+  const raw = String(valor || "").trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const url = new URL(raw, ADMIN_BASE_URL);
+
+    if (
+      url.protocol !== "http:" &&
+      url.protocol !== "https:"
+    ) {
+      return null;
+    }
+
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 function extraerUsuariosDesdeHtml(html) {
   const $ = cheerio.load(html);
   const usuarios = [];
@@ -115,6 +138,12 @@ function extraerUsuariosDesdeHtml(html) {
     if (!cells || cells.length < 12) return;
 
     const certificadoUrl = $(cells[10]).find("a").attr("href") || null;
+
+    const certificadoHref =
+  $(cells[10]).find("a").attr("href") || "";
+
+const certificadoUrl =
+  normalizarUrlCertificado(certificadoHref);
 
     const usuario = {
       id: limpiarTexto($(cells[0]).text()),

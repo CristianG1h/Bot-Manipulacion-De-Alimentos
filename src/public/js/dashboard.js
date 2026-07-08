@@ -21,6 +21,48 @@
       "#8b5cf6"
     ];
 
+    function textoSeguro(value, fallback = "") {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  const texto = String(value);
+
+  return texto.length > 0 ? texto : fallback;
+}
+
+
+function crearCeldaTexto(value, fallback = "") {
+  const td = document.createElement("td");
+
+  // textContent interpreta el contenido únicamente como texto.
+  // Nunca como HTML.
+  td.textContent = textoSeguro(value, fallback);
+
+  return td;
+}
+
+
+function obtenerUrlHttpSegura(value) {
+  const raw = String(value || "").trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const url = new URL(raw, window.location.origin);
+
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
     function toggleTheme() {
       isLight = !isLight;
       document.body.classList.toggle("light", isLight);
@@ -275,7 +317,11 @@
   const nextBtn = document.getElementById("logNextBtn");
 
   const logs = Array.isArray(items) ? items : [];
-  const totalPages = Math.max(1, Math.ceil(logs.length / logsPageSize));
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(logs.length / logsPageSize)
+  );
 
   if (logsPage > totalPages - 1) {
     logsPage = totalPages - 1;
@@ -285,44 +331,101 @@
     logsPage = 0;
   }
 
-  if (!logs.length) {
-    body.innerHTML = `
-      <tr>
-        <td colspan="3" style="text-align:center;color:var(--muted);padding:22px">
-          Sin resultados para este filtro
-        </td>
-      </tr>
-    `;
+  // Limpiar contenido anterior de forma segura.
+  body.replaceChildren();
 
-    if (pageInfo) pageInfo.textContent = "Página 0 de 0";
-    if (prevBtn) prevBtn.disabled = true;
-    if (nextBtn) nextBtn.disabled = true;
+  if (!logs.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+
+    td.colSpan = 3;
+    td.style.textAlign = "center";
+    td.style.color = "var(--muted)";
+    td.style.padding = "22px";
+    td.textContent = "Sin resultados para este filtro";
+
+    tr.appendChild(td);
+    body.appendChild(tr);
+
+    if (pageInfo) {
+      pageInfo.textContent = "Página 0 de 0";
+    }
+
+    if (prevBtn) {
+      prevBtn.disabled = true;
+    }
+
+    if (nextBtn) {
+      nextBtn.disabled = true;
+    }
 
     return;
   }
 
   const start = logsPage * logsPageSize;
   const end = start + logsPageSize;
+
   const pageItems = logs.slice(start, end);
 
-  body.innerHTML = pageItems.map(i => {
+  const fragment = document.createDocumentFragment();
+
+  pageItems.forEach((i) => {
     const fecha = formatFecha(i.fecha || i.ts);
     const hora = i.hora || "—";
 
-    return `
-      <tr>
-        <td style="color:var(--muted);white-space:nowrap">
-          <div class="log-date">${fecha}</div>
-          <div class="log-time">${hora}</div>
-        </td>
-        <td>${i.detalle || "—"}</td>
-        <td><span class="badge ${badgeClass(i.estado)}">${badgeLabel(i.estado)}</span></td>
-      </tr>
-    `;
-  }).join("");
+    const tr = document.createElement("tr");
+
+
+    // Fecha y hora
+    const tdFecha = document.createElement("td");
+
+    tdFecha.style.color = "var(--muted)";
+    tdFecha.style.whiteSpace = "nowrap";
+
+    const fechaDiv = document.createElement("div");
+    fechaDiv.className = "log-date";
+    fechaDiv.textContent = fecha;
+
+    const horaDiv = document.createElement("div");
+    horaDiv.className = "log-time";
+    horaDiv.textContent = hora;
+
+    tdFecha.appendChild(fechaDiv);
+    tdFecha.appendChild(horaDiv);
+
+
+    // Detalle seguro
+    const tdDetalle = document.createElement("td");
+
+    tdDetalle.textContent = textoSeguro(
+      i.detalle,
+      "—"
+    );
+
+
+    // Estado
+    const tdEstado = document.createElement("td");
+    const badge = document.createElement("span");
+
+    badge.className = `badge ${badgeClass(i.estado)}`;
+    badge.textContent = badgeLabel(i.estado);
+
+    tdEstado.appendChild(badge);
+
+
+    tr.appendChild(tdFecha);
+    tr.appendChild(tdDetalle);
+    tr.appendChild(tdEstado);
+
+    fragment.appendChild(tr);
+  });
+
+  body.appendChild(fragment);
+
 
   if (pageInfo) {
-    pageInfo.textContent = `Página ${logsPage + 1} de ${totalPages}`;
+    pageInfo.textContent =
+      `Página ${logsPage + 1} de ${totalPages}`;
   }
 
   if (prevBtn) {
@@ -340,22 +443,73 @@ function moveLogsPage(direction) {
 }
 
     function renderKeywords(keywords) {
-      const entries = Object.entries(keywords || {})
-        .filter(([, v]) => Number(v || 0) >= 0)
-        .sort((a, b) => Number(b[1]) - Number(a[1]));
+  const entries = Object.entries(keywords || {})
+    .filter(([, v]) => Number(v || 0) >= 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
 
-      const max = entries[0]?.[1] || 1;
+  const max = Number(entries[0]?.[1] || 1);
 
-      document.getElementById("kwBars").innerHTML = entries.map(([key, val], index) => `
-        <div class="kw-row">
-          <div class="kw-label">${key}</div>
-          <div class="kw-track">
-            <div class="kw-fill" style="width:${Math.round((val / max) * 100)}%;background:${kwColors[index % kwColors.length]}"></div>
-          </div>
-          <div class="kw-count">${val}</div>
-        </div>
-      `).join("");
-    }
+  const container = document.getElementById("kwBars");
+
+  if (!container) {
+    return;
+  }
+
+  container.replaceChildren();
+
+  const fragment = document.createDocumentFragment();
+
+  entries.forEach(([key, val], index) => {
+    const numericValue = Number(val || 0);
+
+    const porcentaje = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round((numericValue / max) * 100)
+      )
+    );
+
+
+    const row = document.createElement("div");
+    row.className = "kw-row";
+
+
+    const label = document.createElement("div");
+    label.className = "kw-label";
+    label.textContent = String(key);
+
+
+    const track = document.createElement("div");
+    track.className = "kw-track";
+
+
+    const fill = document.createElement("div");
+    fill.className = "kw-fill";
+
+    fill.style.width = `${porcentaje}%`;
+
+    // Color proveniente únicamente del array local controlado.
+    fill.style.background =
+      kwColors[index % kwColors.length];
+
+
+    const count = document.createElement("div");
+    count.className = "kw-count";
+    count.textContent = formatNumber(numericValue);
+
+
+    track.appendChild(fill);
+
+    row.appendChild(label);
+    row.appendChild(track);
+    row.appendChild(count);
+
+    fragment.appendChild(row);
+  });
+
+  container.appendChild(fragment);
+}
 
     function updateActivityTitle(data) {
   const chartRangeValue = document.getElementById("chartRangeSelect")?.value || "14d";
@@ -705,60 +859,140 @@ function actualizarMetricasCertificadosDesdeUsuarios(usuarios) {
 }
 
 function mostrarPanelEmpresa(usuarios) {
-  usuariosEmpresaFiltrados = Array.isArray(usuarios) ? usuarios : [];
-    actualizarMetricasCertificadosDesdeUsuarios(usuariosEmpresaFiltrados);
+  usuariosEmpresaFiltrados =
+    Array.isArray(usuarios) ? usuarios : [];
+
+  actualizarMetricasCertificadosDesdeUsuarios(
+    usuariosEmpresaFiltrados
+  );
 
   const panel = document.getElementById("empresaPanel");
   const body = document.getElementById("empresaBody");
   const titulo = document.getElementById("empresaTitulo");
   const subtitulo = document.getElementById("empresaSubtitulo");
 
-  if (!panel || !body) return;
+  if (!panel || !body) {
+    return;
+  }
 
-  const q = document.getElementById("qInput")?.value || "";
-  const empresaNombre = usuariosEmpresaFiltrados[0]?.empresa || `Búsqueda: ${q}`;
+  const q =
+    document.getElementById("qInput")?.value || "";
 
+  const empresaNombre =
+    usuariosEmpresaFiltrados[0]?.empresa ||
+    `Búsqueda: ${q}`;
+
+  // Ya estaban correctamente usando textContent.
   titulo.textContent = empresaNombre;
-  subtitulo.textContent = `${usuariosEmpresaFiltrados.length} usuario(s) encontrados según empresa y fecha`;
+
+  subtitulo.textContent =
+    `${usuariosEmpresaFiltrados.length} usuario(s) encontrados según empresa y fecha`;
+
+
+  body.replaceChildren();
+
 
   if (!usuariosEmpresaFiltrados.length) {
-    body.innerHTML = `
-      <tr>
-        <td colspan="7" style="text-align:center;color:var(--muted);padding:22px">
-          No hay usuarios de curso para esta empresa en el rango seleccionado.
-        </td>
-      </tr>
-    `;
-  } else {
-    body.innerHTML = usuariosEmpresaFiltrados.map((u) => {
-      const nombre = u.nombre || u.usuario || "";
-      const cedula = u.documento || "";
-      const empresa = u.empresa || "";
-      const primerIngreso = u.primer_ingreso === "—" ? "" : (u.primer_ingreso || "");
-      const ultimoIngreso = u.ultimo_ingreso === "—" ? "" : (u.ultimo_ingreso || "");
-      const realizoCurso = u.completado === true ? "Sí" : "No";
-      const certificado = u.certificado_url
-        ? `<a href="${u.certificado_url}" target="_blank" class="empresa-cert-link">Ver certificado</a>`
-        : "";
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
 
-      return `
-        <tr>
-          <td>${nombre}</td>
-          <td>${cedula}</td>
-          <td>${empresa}</td>
-          <td>${primerIngreso}</td>
-          <td>${ultimoIngreso}</td>
-          <td>${realizoCurso}</td>
-          <td>${certificado}</td>
-        </tr>
-      `;
-    }).join("");
+    td.colSpan = 7;
+    td.style.textAlign = "center";
+    td.style.color = "var(--muted)";
+    td.style.padding = "22px";
+
+    td.textContent =
+      "No hay usuarios de curso para esta empresa en el rango seleccionado.";
+
+    tr.appendChild(td);
+    body.appendChild(tr);
+  } else {
+    const fragment = document.createDocumentFragment();
+
+    usuariosEmpresaFiltrados.forEach((u) => {
+      const nombre =
+        u.nombre ||
+        u.usuario ||
+        "";
+
+      const cedula =
+        u.documento ||
+        "";
+
+      const empresa =
+        u.empresa ||
+        "";
+
+      const primerIngreso =
+        u.primer_ingreso === "—"
+          ? ""
+          : (u.primer_ingreso || "");
+
+      const ultimoIngreso =
+        u.ultimo_ingreso === "—"
+          ? ""
+          : (u.ultimo_ingreso || "");
+
+      const realizoCurso =
+        u.completado === true
+          ? "Sí"
+          : "No";
+
+
+      const tr = document.createElement("tr");
+
+      tr.appendChild(crearCeldaTexto(nombre));
+      tr.appendChild(crearCeldaTexto(cedula));
+      tr.appendChild(crearCeldaTexto(empresa));
+      tr.appendChild(crearCeldaTexto(primerIngreso));
+      tr.appendChild(crearCeldaTexto(ultimoIngreso));
+      tr.appendChild(crearCeldaTexto(realizoCurso));
+
+
+      // Certificado
+      const tdCertificado =
+        document.createElement("td");
+
+      const urlSegura =
+        obtenerUrlHttpSegura(u.certificado_url);
+
+      if (urlSegura) {
+        const link =
+          document.createElement("a");
+
+        link.href = urlSegura;
+        link.target = "_blank";
+
+        // Evita acceso a window.opener.
+        link.rel = "noopener noreferrer";
+
+        link.className =
+          "empresa-cert-link";
+
+        link.textContent =
+          "Ver certificado";
+
+        tdCertificado.appendChild(link);
+      }
+
+      tr.appendChild(tdCertificado);
+
+      fragment.appendChild(tr);
+    });
+
+    body.appendChild(fragment);
   }
+
 
   panel.classList.remove("hidden");
 
-  document.querySelector(".charts-row")?.classList.add("hidden");
-  document.querySelector(".bottom-row")?.classList.add("hidden");
+  document
+    .querySelector(".charts-row")
+    ?.classList.add("hidden");
+
+  document
+    .querySelector(".bottom-row")
+    ?.classList.add("hidden");
 }
 
 function cerrarPanelEmpresa(limpiarBusqueda = true) {
