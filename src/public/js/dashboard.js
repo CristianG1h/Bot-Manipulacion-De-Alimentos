@@ -1158,54 +1158,123 @@ function initRangeDropdown() {
   const btn = document.getElementById("rangeDropdownBtn");
   const label = document.getElementById("rangeDropdownLabel");
   const hiddenInput = document.getElementById("rangeSelect");
-  const options = document.querySelectorAll("#rangeDropdownMenu .custom-option");
-}
 
-function aplicarFiltroPrincipal() {
-  const modo = document.getElementById("searchMode")?.value || "bot";
+  const options = document.querySelectorAll(
+    "#rangeDropdownMenu .custom-option"
+  );
 
-  if (modo === "empresa") {
-    revisarFiltroEmpresa();
-  } else {
-    cerrarPanelEmpresa(false);
-    loadStats();
+  // Protección por si falta algún elemento del DOM
+  if (
+    !dropdown ||
+    !btn ||
+    !label ||
+    !hiddenInput ||
+    options.length === 0
+  ) {
+    console.warn(
+      "⚠️ No se pudo inicializar el selector de fechas"
+    );
+
+    return;
   }
 
+
+  // Abrir o cerrar dropdown
   btn.addEventListener("click", (event) => {
     event.stopPropagation();
+
     dropdown.classList.toggle("open");
   });
 
+
+  // Seleccionar opción
   options.forEach((option) => {
-    option.addEventListener("click", () => {
-      const value = option.dataset.value;
-      const text = option.querySelector("span").textContent.trim();
+    option.addEventListener("click", (event) => {
+      event.stopPropagation();
 
+      const value = option.dataset.value || "all";
+
+      const optionLabel =
+        option.querySelector("span")?.textContent?.trim() ||
+        option.textContent.trim();
+
+
+      // Actualizar valor real
       hiddenInput.value = value;
-      label.textContent = text;
 
-      options.forEach((o) => o.classList.remove("active"));
+
+      // Actualizar texto visible
+      label.textContent = optionLabel;
+
+
+      // Cambiar opción activa
+      options.forEach((item) => {
+        item.classList.remove("active");
+      });
+
       option.classList.add("active");
 
+
+      // Cerrar dropdown
       dropdown.classList.remove("open");
 
-        chartOffset = 0;
-        toggleCustomFields();
-        syncChartWithMainFilter();
-        loadStats();
-        revisarFiltroEmpresa();
+
+      // Reiniciar navegación del gráfico
+      chartOffset = 0;
+
+
+      // Mostrar u ocultar fechas personalizadas
+      toggleCustomFields();
+
+
+      // Sincronizar gráfico con filtro principal
+      syncChartWithMainFilter();
+
+
+      // Ejecutar filtro
+      aplicarFiltroPrincipal();
     });
   });
 
-  document.addEventListener("click", () => {
-    dropdown.classList.remove("open");
+
+  // Cerrar haciendo clic fuera
+  document.addEventListener("click", (event) => {
+    if (!dropdown.contains(event.target)) {
+      dropdown.classList.remove("open");
+    }
   });
 
+
+  // Cerrar con Escape
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       dropdown.classList.remove("open");
     }
   });
+}
+
+
+function aplicarFiltroPrincipal() {
+  const modo =
+    document.getElementById("searchMode")?.value ||
+    "bot";
+
+  // Reinicia navegación del gráfico cuando
+  // se aplica un nuevo filtro principal.
+  chartOffset = 0;
+
+  syncChartWithMainFilter();
+
+
+  if (modo === "empresa") {
+    revisarFiltroEmpresa();
+    return;
+  }
+
+
+  cerrarPanelEmpresa(false);
+
+  loadStats();
 }
     
     document.getElementById("fromInput").addEventListener("change", () => {
