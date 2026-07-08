@@ -16,40 +16,161 @@ const processedIds = new Set();
 setInterval(() => processedIds.clear(), 24 * 60 * 60 * 1000);
 
 // ─── Modo asesor ──────────────────────────────────────────────────────────────
+
 const advisorMode = new Map();
+
 const ADVISOR_TIMEOUT_MS = 5 * 60 * 1000;
 
-function setAdvisorMode(wa_id) {
-  clearAdvisorMode(wa_id, false);
+
+/**
+ * Programa o reinicia el temporizador del modo asesor.
+ *
+ * advisorMode:
+ * wa_id => {
+ *   timer,
+ *   humanResponded
+ * }
+ */
+function programarTimeoutAsesor(
+  wa_id,
+  humanResponded = false
+) {
+  const estadoAnterior = advisorMode.get(wa_id);
+
+  if (estadoAnterior?.timer) {
+    clearTimeout(estadoAnterior.timer);
+  }
+
 
   const timer = setTimeout(async () => {
+    const estadoActual = advisorMode.get(wa_id);
+
     advisorMode.delete(wa_id);
-    console.log(`⏰ Timeout asesor expirado para ${wa_id} — bot retoma`);
 
-    const msg =
-      "⏱️ Han pasado 5 minutos sin respuesta de nuestro equipo.\n\n" +
-      "Si aún necesitas ayuda puedes:\n\n" +
-      "📱 Llamarnos al *313 401 0901*\n" +
-      "📄 O escribir *instructivo* para recibir el link del curso.\n\n" +
-      "Seguimos a tu disposición. 🙌";
 
-    await sendText(wa_id, msg);
+    // El asesor nunca respondió.
+    if (!estadoActual?.humanResponded) {
+      console.log(
+        `⏰ Sin respuesta del asesor para ${wa_id} — bot retoma`
+      );
+
+      const msg =
+        "⏱️ Han pasado 5 minutos sin respuesta de nuestro equipo.\n\n" +
+        "Si aún necesitas ayuda puedes:\n\n" +
+        "📱 Llamarnos al *313 401 0901*\n" +
+        "📄 O escribir *instructivo* para recibir el link del curso.\n\n" +
+        "Seguimos a tu disposición. 🙌";
+
+      try {
+        await sendText(wa_id, msg);
+      } catch (error) {
+        console.error(
+          `❌ Error enviando mensaje de timeout a ${wa_id}:`,
+          error.message
+        );
+      }
+
+      return;
+    }
+
+
+    // El asesor sí respondió.
+    // Después de 5 minutos sin actividad,
+    // el bot retoma silenciosamente.
+    console.log(
+      `✅ Atención humana inactiva por 5 minutos para ${wa_id} — bot retoma silenciosamente`
+    );
   }, ADVISOR_TIMEOUT_MS);
 
-  advisorMode.set(wa_id, timer);
-  console.log(`👤 Modo asesor activado para ${wa_id}`);
+
+  advisorMode.set(wa_id, {
+    timer,
+    humanResponded,
+  });
 }
 
-function clearAdvisorMode(wa_id, log = true) {
-  const timer = advisorMode.get(wa_id);
 
-  if (timer) {
-    clearTimeout(timer);
-    advisorMode.delete(wa_id);
+/**
+ * Activa inicialmente el modo asesor.
+ */
+function setAdvisorMode(wa_id) {
+  programarTimeoutAsesor(
+    wa_id,
+    false
+  );
 
-    if (log) {
-      console.log(`✅ Modo asesor desactivado para ${wa_id}`);
-    }
+  console.log(
+    `👤 Modo asesor activado para ${wa_id}`
+  );
+}
+
+
+/**
+ * El usuario escribió mientras un asesor
+ * tiene el control.
+ *
+ * Reinicia el temporizador conservando
+ * si el asesor ya había respondido.
+ */
+function registrarActividadUsuarioModoAsesor(wa_id) {
+  const estado = advisorMode.get(wa_id);
+
+  if (!estado) {
+    return;
+  }
+
+  programarTimeoutAsesor(
+    wa_id,
+    estado.humanResponded === true
+  );
+
+  console.log(
+    `💬 Usuario ${wa_id} escribió durante modo asesor — timeout reiniciado`
+  );
+}
+
+
+/**
+ * Un agente humano respondió desde Chatwoot.
+ */
+function registrarRespuestaAsesor(wa_id) {
+  const estado = advisorMode.get(wa_id);
+
+  if (!estado) {
+    return;
+  }
+
+  programarTimeoutAsesor(
+    wa_id,
+    true
+  );
+
+  console.log(
+    `👨‍💼 Asesor respondió a ${wa_id} — timeout reiniciado`
+  );
+}
+
+
+/**
+ * Desactiva completamente el modo asesor.
+ */
+function clearAdvisorMode(
+  wa_id,
+  log = true
+) {
+  const estado = advisorMode.get(wa_id);
+
+  if (estado?.timer) {
+    clearTimeout(estado.timer);
+  }
+
+  advisorMode.delete(wa_id);
+
+
+  if (log && estado) {
+    console.log(
+      `✅ Modo asesor desactivado para ${wa_id}`
+    );
   }
 }
 
@@ -163,97 +284,236 @@ router.post("/webhook", async (req, res) => {
   try {
     const body = req.body;
 
-    if (body.event !== "message_created") return;
-    if (body.message_type !== "incoming") return;
-    if (body.private === true) return;
 
-    // ─────────────────────────────────────────────
-    // FILTRO POR INBOX
-    // Este bot SOLO debe responder mensajes del inbox del Curso de Alimentos.
-    // Evita que responda cuando escriben al inbox de CRC.
-    // ─────────────────────────────────────────────
-    const expectedInboxId = Number(process.env.CHATWOOT_INBOX_ID || 0);
-    const payloadInboxId = obtenerInboxIdDesdePayload(body);
+if (body.event !== "message_created") {
+  return;
+}
 
-    if (!expectedInboxId) {
-      console.log(
-        "❌ Falta configurar CHATWOOT_INBOX_ID en Render. Mensaje ignorado para evitar cruces entre bots."
-      );
-      return;
-    }
 
-    if (!payloadInboxId) {
-      console.log(
-        "⚠️ Webhook Chatwoot sin inbox_id claro. Mensaje ignorado para evitar mezclar canales."
-      );
-      return;
-    }
+// Las notas privadas no deben afectar
+// el temporizador del asesor.
+if (body.private === true) {
+  return;
+}
 
-    if (Number(payloadInboxId) !== expectedInboxId) {
-      console.log(
-        `⏭️ Mensaje ignorado por inbox diferente. Esperado: ${expectedInboxId}, recibido: ${payloadInboxId}`
-      );
-      return;
-    }
 
-    console.log("✅ Inbox correcto para Curso de Alimentos:", payloadInboxId);
+const messageType = String(
+  body.message_type ?? ""
+).toLowerCase();
 
-    const rawPhone =
-      body.meta?.sender?.phone_number ||
-      body.conversation?.meta?.sender?.phone_number ||
-      body.contact?.phone_number ||
-      null;
+const esIncoming =
+  messageType === "incoming" ||
+  messageType === "0";
 
-    if (!rawPhone) {
-      console.log("❌ No se pudo extraer teléfono del payload Chatwoot");
-      console.log("📩 Payload:", JSON.stringify(body, null, 2));
-      return;
-    }
+const esOutgoing =
+  messageType === "outgoing" ||
+  messageType === "1";
 
-    const wa_id = rawPhone.replace(/\D/g, "");
-    console.log(`📩 Mensaje de ${wa_id}`);
 
-    Stats.mensajeRecibido(wa_id);
+// ─────────────────────────────────────────────
+// FILTRO POR INBOX
+// ─────────────────────────────────────────────
 
-    const rl = isRateLimited(wa_id);
+const expectedInboxId = Number(
+  process.env.CHATWOOT_INBOX_ID || 0
+);
 
-    if (rl.limited) {
-      Stats.rateLimitado(wa_id);
+const payloadInboxId =
+  obtenerInboxIdDesdePayload(body);
 
-      if (rl.reason === "too_many") {
-        await sendText(wa_id, "⚠️ Demasiados mensajes seguidos. Intenta en unos minutos.");
-      }
 
-      return;
-    }
+if (!expectedInboxId) {
+  console.log(
+    "❌ Falta configurar CHATWOOT_INBOX_ID en Render. Mensaje ignorado."
+  );
 
-    const messageId = body.id ? String(body.id) : null;
+  return;
+}
 
-    if (messageId) {
-      if (processedIds.has(messageId)) {
-        console.log("⏭️ Duplicado ignorado:", messageId);
-        Stats.duplicadoIgnorado(messageId);
-        return;
-      }
 
-      processedIds.add(messageId);
-    }
+if (!payloadInboxId) {
+  console.log(
+    "⚠️ Webhook Chatwoot sin inbox_id claro. Mensaje ignorado."
+  );
 
-    const conversationId = body.conversation?.id || body.conversation_id || null;
+  return;
+}
 
-    const buttonId = extractButtonId(body);
 
-    if (buttonId) {
-      console.log("🔘 Botón:", buttonId);
-      clearAdvisorMode(wa_id);
-      return await handleButton(wa_id, buttonId, conversationId);
-    }
+if (
+  Number(payloadInboxId) !==
+  expectedInboxId
+) {
+  console.log(
+    `⏭️ Mensaje ignorado por inbox diferente. Esperado: ${expectedInboxId}, recibido: ${payloadInboxId}`
+  );
 
-    if (advisorMode.has(wa_id)) {
-      console.log(`🤐 ${wa_id} en modo asesor — bot silenciado`);
-      setAdvisorMode(wa_id);
-      return;
-    }
+  return;
+}
+
+
+console.log(
+  "✅ Inbox correcto para Curso de Alimentos:",
+  payloadInboxId
+);
+
+
+// ─────────────────────────────────────────────
+// IDENTIFICAR CONTACTO
+// ─────────────────────────────────────────────
+
+const rawPhone =
+  body.meta?.sender?.phone_number ||
+  body.conversation?.meta?.sender?.phone_number ||
+  body.contact?.phone_number ||
+  null;
+
+
+if (!rawPhone) {
+  console.log(
+    "❌ No se pudo extraer teléfono del payload Chatwoot"
+  );
+
+  return;
+}
+
+
+const wa_id =
+  String(rawPhone).replace(/\D/g, "");
+
+
+const conversationId =
+  body.conversation?.id ||
+  body.conversation_id ||
+  null;
+
+
+// ─────────────────────────────────────────────
+// RESPUESTA DEL ASESOR DESDE CHATWOOT
+// ─────────────────────────────────────────────
+
+if (esOutgoing) {
+  const senderType = String(
+    body.sender?.type || ""
+  ).toLowerCase();
+
+
+  // Chatwoot identifica al agente humano
+  // como sender.type = "user".
+  if (senderType !== "user") {
+    console.log(
+      `⏭️ Mensaje outgoing no humano ignorado. sender.type=${senderType || "desconocido"}`
+    );
+
+    return;
+  }
+
+
+  if (advisorMode.has(wa_id)) {
+    registrarRespuestaAsesor(wa_id);
+  }
+
+  return;
+}
+
+
+// El bot solamente procesa contenido del cliente.
+if (!esIncoming) {
+  return;
+}
+
+
+console.log(`📩 Mensaje de ${wa_id}`);
+
+
+Stats.mensajeRecibido(wa_id);
+
+
+// ─────────────────────────────────────────────
+// RATE LIMIT
+// ─────────────────────────────────────────────
+
+const rl = isRateLimited(wa_id);
+
+
+if (rl.limited) {
+  Stats.rateLimitado(wa_id);
+
+  if (rl.reason === "too_many") {
+    await sendText(
+      wa_id,
+      "⚠️ Demasiados mensajes seguidos. Intenta en unos minutos."
+    );
+  }
+
+  return;
+}
+
+
+// ─────────────────────────────────────────────
+// DEDUPLICACIÓN
+// ─────────────────────────────────────────────
+
+const messageId =
+  body.id
+    ? String(body.id)
+    : null;
+
+
+if (messageId) {
+  if (processedIds.has(messageId)) {
+    console.log(
+      "⏭️ Duplicado ignorado:",
+      messageId
+    );
+
+    Stats.duplicadoIgnorado(messageId);
+
+    return;
+  }
+
+  processedIds.add(messageId);
+}
+
+
+// ─────────────────────────────────────────────
+// BOTONES
+// ─────────────────────────────────────────────
+
+const buttonId = extractButtonId(body);
+
+
+if (buttonId) {
+  console.log(
+    "🔘 Botón:",
+    buttonId
+  );
+
+  clearAdvisorMode(wa_id);
+
+  return await handleButton(
+    wa_id,
+    buttonId,
+    conversationId
+  );
+}
+
+
+// ─────────────────────────────────────────────
+// USUARIO EN MODO ASESOR
+// ─────────────────────────────────────────────
+
+if (advisorMode.has(wa_id)) {
+  console.log(
+    `🤐 ${wa_id} en modo asesor — bot silenciado`
+  );
+
+  registrarActividadUsuarioModoAsesor(
+    wa_id
+  );
+
+  return;
+}
 
     const rawText = (body.content || "").trim();
 
