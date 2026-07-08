@@ -327,13 +327,35 @@ function registrarInteraccion({
   saveStatsSoon();
 }
 
-function actividadUltimos14DiasMemoria() {
+function actividadMemoriaPorRango(chartMeta) {
   const dias = [];
 
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+  if (!chartMeta?.desde || !chartMeta?.hasta) {
+    return dias;
+  }
 
+  const startDate = new Date(
+    `${chartMeta.desde}T00:00:00-05:00`
+  );
+
+  const endDate = new Date(
+    `${chartMeta.hasta}T00:00:00-05:00`
+  );
+
+
+  if (
+    Number.isNaN(startDate.getTime()) ||
+    Number.isNaN(endDate.getTime())
+  ) {
+    return dias;
+  }
+
+
+  for (
+    let d = new Date(startDate);
+    d.getTime() <= endDate.getTime();
+    d.setDate(d.getDate() + 1)
+  ) {
     const key = fechaBogotaKey(d);
 
     dias.push({
@@ -342,6 +364,7 @@ function actividadUltimos14DiasMemoria() {
       total: stats.porDia[key] || 0,
     });
   }
+
 
   return dias;
 }
@@ -691,9 +714,15 @@ filtros: {
 }
 
 function getSnapshotMemoria(query = {}) {
-  const conversacionesReales = Array.isArray(stats.contactosUnicos)
-    ? stats.contactosUnicos.length
-    : 0;
+  const conversacionesReales =
+    Array.isArray(stats.contactosUnicos)
+      ? stats.contactosUnicos.length
+      : 0;
+
+
+  const chartMeta =
+    buildChartDateFilter(query);
+
 
   return {
     totales: {
@@ -703,33 +732,66 @@ function getSnapshotMemoria(query = {}) {
       accesosEnviados: stats.accesosEnviados,
       certificadosEnviados: stats.certificadosEnviados,
       asesoresActivados: stats.asesoresActivados,
-      mensajesNoReconocidos: stats.mensajesNoReconocidos,
-      duplicadosIgnorados: stats.duplicadosIgnorados,
-      rateLimitados: stats.rateLimitados,
-      erroresMeta: stats.erroresMeta,
+      mensajesNoReconocidos:
+        stats.mensajesNoReconocidos,
+      duplicadosIgnorados:
+        stats.duplicadosIgnorados,
+      rateLimitados:
+        stats.rateLimitados,
+      erroresMeta:
+        stats.erroresMeta,
     },
-    ultimasInteracciones: stats.ultimasInteracciones.slice(0, 20),
-    keywords: stats.keywords,
-    actividadPorDia: actividadUltimos14DiasMemoria(),
-    actividadPorHora: stats.porHora,
-    iniciadoEn: stats.iniciadoEn,
-    uptime: Math.floor(process.uptime()),
-    persistencia: "memoria",
-    zonaHoraria: "America/Bogota",
-    chartMeta: {
-  range: chartMeta.range,
-  desde: chartMeta.desde,
-  hasta: chartMeta.hasta,
-},
 
-filtros: {
-  q: query.q || "",
-  range: query.range || "all",
-  from: query.from || "",
-  to: query.to || "",
-  chartRange: query.chartRange || "14d",
-  chartOffset: query.chartOffset || "0",
-},
+
+    ultimasInteracciones:
+      stats.ultimasInteracciones.slice(0, 20),
+
+
+    keywords:
+      stats.keywords,
+
+
+    actividadPorDia:
+      actividadMemoriaPorRango(chartMeta),
+
+
+    actividadPorHora:
+      stats.porHora,
+
+
+    iniciadoEn:
+      stats.iniciadoEn,
+
+
+    uptime:
+      Math.floor(process.uptime()),
+
+
+    persistencia:
+      "memoria",
+
+
+    zonaHoraria:
+      "America/Bogota",
+
+
+    chartMeta: {
+      range: chartMeta.range,
+      desde: chartMeta.desde,
+      hasta: chartMeta.hasta,
+    },
+
+
+    filtros: {
+      q: query.q || "",
+      range: query.range || "all",
+      from: query.from || "",
+      to: query.to || "",
+      chartRange:
+        query.chartRange || "14d",
+      chartOffset:
+        query.chartOffset || "0",
+    },
   };
 }
 
