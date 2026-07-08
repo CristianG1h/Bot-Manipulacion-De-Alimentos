@@ -576,7 +576,7 @@ async function getSnapshotPostgres(query = {}) {
     SELECT
       COUNT(DISTINCT wa_id) FILTER (WHERE wa_id IS NOT NULL AND tipo = 'mensaje_recibido')::int AS conversaciones,
       COUNT(*) FILTER (WHERE tipo = 'mensaje_recibido')::int AS mensajes_recibidos,
-      COUNT(*) FILTER (WHERE tipo IN ('mensaje', 'whatsapp', 'menu', 'instructivo', 'recibido', 'asesor', 'acceso', 'certificado'))::int AS mensajes_enviados,
+      COUNT(*) FILTER (WHERE tipo IN ('mensaje', 'whatsapp', 'menu', 'instructivo', 'recibido', 'acceso', 'certificado'))::int AS mensajes_enviados,
       COUNT(*) FILTER (WHERE tipo = 'acceso')::int AS accesos_enviados,
       COUNT(*) FILTER (WHERE tipo = 'certificado')::int AS certificados_enviados,
       COUNT(*) FILTER (WHERE tipo = 'asesor')::int AS asesores_activados,
@@ -872,18 +872,18 @@ const Stats = {
   },
 
   asesorActivado(waId) {
-    stats.mensajesEnviados++;
-    stats.asesoresActivados++;
-    sumarKeyword("asesor");
+  stats.asesoresActivados++;
 
-    registrarInteraccion({
-      waId,
-      tipo: "asesor",
-      detalle: `Asesor activado para ${maskPhone(waId)}`,
-      estado: "asesor",
-      keywords: ["asesor"],
-    });
-  },
+  sumarKeyword("asesor");
+
+  registrarInteraccion({
+    waId,
+    tipo: "asesor",
+    detalle: `Asesor activado para ${maskPhone(waId)}`,
+    estado: "asesor",
+    keywords: ["asesor"],
+  });
+},
 
   mensajeNoReconocido(waId, texto) {
     stats.mensajesNoReconocidos++;
