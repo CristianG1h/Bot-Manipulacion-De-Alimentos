@@ -897,20 +897,20 @@ const Stats = {
     });
   },
 
-  accesoEnviado() {
+  accesoEnviado(nombre = "usuario", waId = "") {
   stats.mensajesEnviados++;
   stats.accesosEnviados++;
 
   sumarKeyword("acceso");
 
   registrarInteraccion({
+    waId,
     tipo: "acceso",
-    detalle: "Acceso enviado correctamente",
+    detalle: `Acceso enviado a ${nombre}`,
     estado: "ok",
     keywords: ["acceso"],
   });
-},
-
+}
   certificadoEnviado(nombre = "usuario") {
     stats.mensajesEnviados++;
     stats.certificadosEnviados++;

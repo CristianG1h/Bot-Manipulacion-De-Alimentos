@@ -368,7 +368,10 @@ router.post("/access", requireApiKey, async (req, res) => {
       });
     }
 
-    Stats.accesoEnviado();
+    Stats.accesoEnviado(
+    String(name),
+    waTo
+    );
 
     await crearNotaAccesoCurso({
   phoneE164: norm.e164,
