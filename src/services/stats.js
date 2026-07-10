@@ -897,23 +897,25 @@ const Stats = {
     });
   },
 
-  accesoEnviado(nombre = "usuario", waId = "") {
-  stats.mensajesEnviados++;
-  stats.accesosEnviados++;
+    accesoEnviado(nombre = "usuario", waId = "") {
+    stats.mensajesEnviados++;
+    stats.accesosEnviados++;
 
-  sumarKeyword("acceso");
+    sumarKeyword("acceso");
 
-  registrarInteraccion({
-    waId,
-    tipo: "acceso",
-    detalle: `Acceso enviado a ${nombre}`,
-    estado: "ok",
-    keywords: ["acceso"],
-  });
-}
+    registrarInteraccion({
+      waId,
+      tipo: "acceso",
+      detalle: `Acceso enviado a ${nombre}`,
+      estado: "ok",
+      keywords: ["acceso"],
+    });
+  },
+
   certificadoEnviado(nombre = "usuario") {
     stats.mensajesEnviados++;
     stats.certificadosEnviados++;
+
     sumarKeyword("certificado");
 
     registrarInteraccion({
@@ -923,7 +925,7 @@ const Stats = {
       keywords: ["certificado"],
     });
   },
-
+  
   duplicadoIgnorado(id = "", waId = "") {
   stats.duplicadosIgnorados++;
 
