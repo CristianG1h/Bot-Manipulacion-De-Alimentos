@@ -4,310 +4,343 @@
 <img src="https://img.shields.io/badge/Node.js-24.x-339933?style=for-the-badge&logo=node.js&logoColor=white"/>
 <img src="https://img.shields.io/badge/Express-4.x-000000?style=for-the-badge&logo=express&logoColor=white"/>
 <img src="https://img.shields.io/badge/PostgreSQL-Persistencia-4169E1?style=for-the-badge&logo=postgresql&logoColor=white"/>
-<img src="https://img.shields.io/badge/Render-Deployed-46E3B7?style=for-the-badge&logo=render&logoColor=white"/>
+<img src="https://img.shields.io/badge/Render-Producción-46E3B7?style=for-the-badge&logo=render&logoColor=white"/>
 
-# 🤖 Bot WhatsApp — VIP Salud Ocupacional
+# Bot WhatsApp — Manipulación de Alimentos
 
-### Asistente automatizado para el *Curso de Manipulación de Alimentos*
+### VIP Salud Ocupacional
 
-🟢 En producción &nbsp;|&nbsp; 🟢 Estable &nbsp;|&nbsp; 🟢 Dashboard con métricas &nbsp;|&nbsp; 🟢 Anti-spam activo &nbsp;|&nbsp; 🟢 Modo asesor humano
+**En producción · Chatwoot · Meta Cloud API · Dashboard · Certificados · PostgreSQL · Modo asesor**
 
 </div>
 
----
+> **Documentación revisada y consolidada: 12 de agosto de 2026.**
 
-## 📋 Descripción
+## Descripción
 
-Chatbot automatizado para **VIP Salud Ocupacional** que atiende a los usuarios del Curso de Manipulación de Alimentos directamente por WhatsApp.
+Bot automatizado para atender por WhatsApp a los usuarios del **Curso de Manipulación de Alimentos** de VIP Salud Ocupacional.
 
-El bot funciona como primer punto de contacto: responde saludos, entrega el instructivo y enlace del curso, confirma la recepción del acceso, y cuando el usuario necesita atención personalizada **silencia el bot y deja que un asesor humano tome el control** desde Chatwoot.
+El sistema funciona como primer punto de contacto: responde saludos, entrega instructivo y acceso al curso, registra eventos operativos, deriva conversaciones a un asesor humano cuando es necesario y permite consultar métricas desde un dashboard protegido.
 
-Además, el proyecto incluye un **dashboard web protegido** con métricas en tiempo real, un **panel de consulta de certificados** por empresa (con caché del panel y caché persistente de nombres) y **notas privadas automáticas en Chatwoot** para dejar trazabilidad de los principales flujos enviados por el bot.
+Además incorpora un panel de consulta de certificados por empresa con caché para reducir llamadas al sistema externo.
 
----
+## Arquitectura
 
-## 🏗️ Arquitectura
-```
+```text
 Usuario WhatsApp
-      ↓
+      │
+      ▼
 Meta Cloud API
-      ↓
-Chatwoot  ──────────────→  /chatwoot/webhook  (Render)
-                                   ↓
-                         Servidor Node.js (Express)
-                                   ↓
-                ┌──────────────────┼──────────────────────────┐
-                ↓                  ↓                           ↓
-     Responde directo      PostgreSQL (stats +       Caché panel certificados
-     vía Graph API         eventos del bot)           en memoria (TTL 5 min)
-                                                               ↓
-                                                  Scraping controlado del panel
-                                                  externo (axios + cheerio)
-                                   ↓
-                         Dashboard web (/, /dashboard)
-                         protegido con Basic Auth
+      │
+      ▼
+Chatwoot
+      │ webhook
+      ▼
+Render - Node.js / Express
+      │
+      ├── Respuestas WhatsApp vía Graph API
+      ├── Notas privadas en Chatwoot
+      ├── Modo asesor humano
+      ├── Anti-spam y deduplicación
+      ├── Estadísticas ─────────────► PostgreSQL / memoria
+      └── Consulta certificados
+               │
+               ├── caché compartida
+               └── panel administrativo externo
+
+Dashboard protegido: / y /dashboard
 ```
 
-> **Chatwoot** actúa como puente de entrada del webhook y también recibe notas privadas automáticas de lo que el bot respondió.
-> Las respuestas al usuario van **directamente** a WhatsApp vía Meta Graph API.
-> Las estadísticas y eventos del bot se guardan en **PostgreSQL** (con *fallback* a memoria si `DATABASE_URL` no está configurada). El panel de certificados usa una caché compartida en memoria de 5 minutos y los nombres completos pueden persistirse en una base separada mediante `CERTIFICADOS_DATABASE_URL`.
-> El dashboard es una URL **camuflada**: si detecta que quien la visita es un bot de previsualización (WhatsApp, Facebook, Twitter, etc.) muestra una tarjeta pública genérica; a cualquier otra visita le exige usuario y contraseña.
+Chatwoot actúa como bandeja de atención y como origen del webhook. Las respuestas automáticas se envían directamente a WhatsApp mediante Meta Graph API.
 
----
+## Flujo del usuario
 
-## 🔄 Flujo del Usuario
-```
-1. Usuario escribe al número empresarial
-        ↓
-2. Bot detecta saludo → muestra menú interactivo
-        ↓
-   ┌─────────────────────┬──────────────────────┐
-   │  📄 Instructivo     │  💬 Hablar con asesor │
-   └─────────────────────┴──────────────────────┘
-        ↓                         ↓
-3. Bot envía el          4. Bot se SILENCIA
-   instructivo y            Asesor humano
-   link del curso           toma el control
-        ↓                    en Chatwoot
-4b. Si el usuario                ↓
-   confirma "recibido"    5. Si en 5 min no hay
-   el bot envía una          respuesta humana,
-   recomendación de           el bot retoma
-   completarlo en 24h        automáticamente
+```text
+Usuario escribe
+     │
+     ▼
+Bot detecta saludo o intención
+     │
+     ├── Instructivo / acceso al curso
+     │        │
+     │        └── usuario confirma recepción
+     │                └── recomendación de completar el curso
+     │
+     └── Hablar con asesor
+              │
+              └── bot se pausa
+                    │
+                    └── asesor continúa desde Chatwoot
 ```
 
----
+Si el bot no reconoce el mensaje, puede derivar la conversación al modo asesor para evitar respuestas incorrectas.
 
-## ✨ Funcionalidades
+## Funcionalidades actuales
 
-### 🤖 Respuesta automática
-- Detecta saludos y muestra el menú con botones interactivos
-- Envía el instructivo y link del curso al instante
-- Reconoce palabras clave: `instructivo`, `link`, `enlace`, `curso`, `acceso`, `contraseña`, `clave`, `usuario`, `certificado`
-- Reconoce confirmaciones tipo `recibido` / `ok recibido` y responde con una recomendación de completar el curso en 24 horas
+### Respuesta automática
 
-### 👤 Modo asesor humano
-- Al presionar **"Hablar con asesor"** (o al enviar un mensaje que el bot no reconoce) el bot se silencia completamente
-- El asesor puede escribir libremente desde Chatwoot
-- Si el usuario sigue escribiendo, el timer se reinicia (no interrumpe al asesor)
-- Si el asesor nunca responde, después de **5 minutos** el bot retoma automáticamente con un mensaje de disculpa y opciones
-- Si el asesor ya respondió, el bot retoma silenciosamente después de **5 minutos sin actividad**
+- Detecta saludos.
+- Presenta menú interactivo.
+- Entrega instructivo y enlace del curso.
+- Reconoce palabras relacionadas con acceso, usuario, contraseña, curso y certificado.
+- Reconoce confirmaciones como `recibido`.
+- Puede recordar al usuario completar el proceso dentro del tiempo recomendado.
 
-### 📝 Notas privadas automáticas en Chatwoot
-- Las respuestas principales del bot (menú, instructivo, confirmación y derivación a asesor) se registran como **nota privada** en la conversación de Chatwoot cuando el envío fue aceptado correctamente
-- Al enviar el acceso al curso (`/notify/access`) el bot busca o crea automáticamente el contacto y la conversación en Chatwoot y deja constancia de lo enviado
-- Nunca se guardan credenciales ni contraseñas en las notas — solo confirmación de que fueron enviadas por WhatsApp
+### Modo asesor humano
 
-### 🎯 Filtrado por inbox
-- El webhook solo procesa mensajes del inbox configurado en `CHATWOOT_INBOX_ID`, ignorando cualquier otro inbox conectado a la misma instancia de Chatwoot
+- Al solicitar asesor, el bot se silencia para no competir con la atención humana.
+- El asesor continúa desde Chatwoot.
+- La actividad del usuario reinicia el temporizador para no interrumpir una conversación activa.
+- Si no existe respuesta humana, el bot puede retomar después del período configurado.
+- Cuando el asesor ya respondió, el bot puede reactivarse después de un período de inactividad.
 
-### 🛡️ Protección anti-spam
-- Límite de **8 mensajes por minuto** por usuario
-- Bloqueo temporal de **5 minutos** si se excede el límite
-- Longitud máxima de mensaje: **500 caracteres**
+### Integración Chatwoot
 
-### 🔁 Deduplicación en memoria
-- Evita procesar el mismo mensaje dos veces (reintentos del webhook)
-- Se limpia automáticamente cada **24 horas**
+- Filtra el webhook por `CHATWOOT_INBOX_ID` para atender solamente el inbox correcto.
+- Puede buscar o crear contacto y conversación cuando se envían notificaciones.
+- Deja notas privadas de los principales eventos del bot.
+- Las notas no deben incluir contraseñas ni credenciales del curso.
+- Permite mantener trazabilidad sin enviar mensajes internos al usuario final.
 
-### 🔒 Protección del webhook
-- El endpoint `/chatwoot/webhook` está protegido con token en la URL
-- Requests sin token válido reciben `401 Unauthorized`
+### Notificaciones salientes
 
-### 📊 Dashboard administrativo
-- Disponible en `/` y `/dashboard`, protegido con **Basic Auth** (`DASHBOARD_USER` / `DASHBOARD_PASS`)
-- A los bots de previsualización de WhatsApp/Facebook/Twitter/etc. se les muestra una tarjeta pública genérica en vez del panel real (para que el link se vea bien al compartirlo, sin exponer datos)
-- Filtros por número, palabra clave o evento; por rango de fecha (hoy, 7d, 30d, personalizado)
-- Métricas generales: mensajes recibidos/enviados, accesos, certificados, activaciones de asesor, no reconocidos, duplicados, rate limits, errores de Meta
-- Gráfico de actividad por día, con navegación entre rangos
-- Ranking de palabras clave más usadas por los usuarios
-- Registro de últimas interacciones con hora en zona horaria de Bogotá
+Endpoints disponibles para automatizaciones externas:
 
-### 📇 Panel de consulta de certificados por empresa
-- Se autentica automáticamente (scraping con `axios` + `cheerio`) contra el panel administrativo externo de la plataforma del curso
-- Cachea la lista de usuarios/certificados en memoria por 5 minutos para no sobrecargar la plataforma externa
-- Usa una sincronización compartida (*single-flight*): si varios navegadores consultan al mismo tiempo, esperan el mismo proceso en vez de lanzar scrapes duplicados
-- Si la plataforma externa falla, sirve la última copia conocida (`cache_desactualizada: true`) en vez de romper el dashboard
-- El frontend actualiza las métricas de certificados cada 60 segundos únicamente cuando la pestaña está visible
-- Permite buscar usuarios por nombre de empresa y filtrar por fecha de ingreso usando la misma caché del panel
-- Enriquece cada usuario con su **nombre completo real** y lo guarda en PostgreSQL para evitar consultas repetidas al panel de edición
+- `POST /notify/access`
+- `POST /api/notify/access`
+- `POST /notify/certificate`
+- `POST /certificate`
 
-### 📤 Notificaciones salientes
-- **`/notify/access`** — Envía plantilla de acceso al curso (`acceso_curso1`) y deja nota privada en Chatwoot
-- **`/notify/certificate`** y **`/certificate`** — Envían plantilla de certificado aprobado (`certificado_aprobado_v1`)
+El flujo de acceso utiliza la plantilla configurada para entregar las credenciales del curso. El flujo de certificado utiliza la plantilla aprobada correspondiente.
 
----
+## Dashboard administrativo
 
-## ⚙️ Tecnologías
+Disponible en:
+
+```text
+/
+/dashboard
+```
+
+El panel real está protegido mediante **Basic Auth**.
+
+Cuando el enlace es leído por un bot de previsualización de WhatsApp, Facebook, Twitter u otra red compatible, se muestra una tarjeta pública genérica en lugar de exponer la información administrativa.
+
+El dashboard incluye:
+
+- conversaciones;
+- mensajes recibidos;
+- mensajes enviados;
+- accesos enviados;
+- certificados enviados;
+- activaciones de asesor;
+- mensajes no reconocidos;
+- duplicados;
+- bloqueos por rate limit;
+- errores de Meta;
+- actividad por fecha;
+- últimas interacciones;
+- búsqueda por número/palabra/evento;
+- filtros por hoy, 7 días, 30 días y rango personalizado;
+- ranking de palabras frecuentes;
+- fechas y horas referenciadas a Bogotá.
+
+## Persistencia
+
+Las estadísticas pueden almacenarse en PostgreSQL mediante:
+
+```env
+DATABASE_URL=...
+```
+
+Si no existe esa variable, el sistema conserva un **fallback en memoria** para continuar operando, aunque la información no persiste después de un reinicio o despliegue.
+
+## Panel de certificados por empresa
+
+El bot incorpora una integración administrativa que consulta el sistema externo del curso mediante `axios`, cookies y `cheerio`.
+
+### Optimización actual
+
+- Caché en memoria de aproximadamente 5 minutos.
+- Patrón **single-flight**: varias consultas simultáneas esperan la misma actualización y no lanzan múltiples scrapes duplicados.
+- Si el sistema externo falla, se puede utilizar la última copia conocida como caché desactualizada en lugar de romper el dashboard.
+- El frontend evita actualizar agresivamente cuando la pestaña no está visible.
+- La actualización general se realiza con un intervalo más conservador para reducir carga.
+- Búsqueda por empresa.
+- Filtro por fecha de ingreso.
+- Recuperación y enriquecimiento con nombre completo cuando está disponible.
+- Caché persistente de nombres mediante `CERTIFICADOS_DATABASE_URL` cuando está configurada.
+
+## Anti-spam y deduplicación
+
+- Límite operativo aproximado de **8 mensajes por minuto por usuario**.
+- Bloqueo temporal si se supera el límite.
+- Longitud máxima controlada para mensajes entrantes.
+- Deduplicación para evitar procesar reintentos del mismo webhook.
+- La deduplicación se evalúa de forma que un reintento no consuma innecesariamente el límite de mensajes.
+
+## Mejoras de estabilidad y seguridad consolidadas
+
+Durante las revisiones de julio de 2026 se corrigieron varios puntos importantes:
+
+- las estadísticas de salida se alinearon con mensajes realmente aceptados por Meta;
+- se corrigió el funcionamiento cuando PostgreSQL no está disponible;
+- se ajustó el orden entre deduplicación y rate limiting;
+- se redujo el registro innecesario de información sensible en logs;
+- se reforzó el modo asesor para que el bot realmente se pause durante atención humana;
+- se corrigieron incompatibilidades de dependencias;
+- se endureció la protección del webhook cuando falta configuración crítica;
+- se corrigieron filtros de fecha del dashboard;
+- se reforzó el dashboard frente a contenido no confiable para reducir riesgo de XSS;
+- se redujo la frecuencia de trabajo del panel de certificados;
+- se mejoró la confirmación del envío de accesos.
+
+## Tecnologías
 
 | Tecnología | Uso |
 |---|---|
-| **Node.js 24.x** | Runtime del servidor |
-| **Express 4** | Framework HTTP |
-| **WhatsApp Cloud API (Meta)** | Envío de mensajes |
-| **Chatwoot** | Webhook de entrada, gestión de asesores y notas privadas |
-| **PostgreSQL (`pg`)** | Persistencia de estadísticas, eventos y caché de nombres de certificados |
-| **axios + axios-cookiejar-support + tough-cookie** | Cliente HTTP con sesión/cookies para el panel de certificados |
-| **cheerio** | Scraping y parseo del HTML del panel administrativo externo |
-| **Render** | Hosting en producción |
-| **GitHub** | Control de versiones |
+| Node.js 24.x | Runtime |
+| Express 4.x | Servidor HTTP |
+| Meta WhatsApp Cloud API | Envío de mensajes |
+| Chatwoot | Inbox, asesores y trazabilidad |
+| PostgreSQL (`pg`) | Estadísticas y cachés persistentes |
+| Axios | Peticiones HTTP |
+| axios-cookiejar-support | Sesiones HTTP del panel externo |
+| tough-cookie | Manejo de cookies |
+| Cheerio | Parseo del panel de certificados |
+| Render | Hosting |
+| GitHub | Control de versiones |
 
----
+## Estructura principal
 
-## 🗂️ Estructura del Proyecto
+```text
+Bot-Manipulacion-De-Alimentos/
+├── package.json
+├── package-lock.json
+└── src/
+    ├── server.js
+    ├── config.js
+    ├── routes/
+    │   ├── chatwoot.js
+    │   ├── notify.js
+    │   ├── certificate.js
+    │   └── adminCertificados.js
+    ├── services/
+    │   ├── whatsapp.js
+    │   ├── stats.js
+    │   └── certificadosNameCache.js
+    ├── utils/
+    │   ├── rateLimit.js
+    │   └── validation.js
+    └── public/
+        ├── dashboard.html
+        ├── css/
+        └── js/
 ```
-📦 Bot-Manipulacion-De-Alimentos
-├── 📄 package.json
-└── 📁 src
-    ├── 📄 server.js                    ← Entrada principal, dashboard, previews OG
-    ├── 📄 config.js                    ← Variables de entorno
-    ├── 📁 routes
-    │   ├── 📄 chatwoot.js              ← Webhook principal del bot ⭐
-    │   ├── 📄 notify.js                ← Notificaciones de acceso + notas Chatwoot
-    │   ├── 📄 certificate.js           ← Notificaciones de certificado
-    │   └── 📄 adminCertificados.js     ← Scraping y API del panel de certificados
-    ├── 📁 services
-    │   ├── 📄 whatsapp.js              ← Envío a Graph API
-    │   ├── 📄 stats.js                 ← Estadísticas + persistencia PostgreSQL
-    │   └── 📄 certificadosNameCache.js ← Caché de nombres completos (PostgreSQL)
-    ├── 📁 utils
-    │   ├── 📄 rateLimit.js             ← Anti-spam
-    │   └── 📄 validation.js            ← Normalización de teléfono
-    └── 📁 public                       ← Dashboard web (protegido)
-        ├── 📄 dashboard.html
-        ├── 📁 css
-        │   └── 📄 dashboard.css
-        └── 📁 js
-            └── 📄 dashboard.js
-```
 
----
+## Variables de entorno
 
-## 🔐 Variables de Entorno
+### WhatsApp / curso
 
-Configura estas variables en **Render → Environment**:
-
-### WhatsApp / Curso
-| Variable | Descripción | Requerida |
-|---|---|:---:|
-| `WHATSAPP_TOKEN` | Token de acceso de Meta | ✅ |
-| `PHONE_NUMBER_ID` | ID del número de WhatsApp | ✅ |
-| `COURSE_LINK` | Link del curso | ✅ |
-| `COURSE_PASSWORD` | Contraseña del curso | ✅ |
-| `VERIFY_TOKEN` | Token reservado de verificación; actualmente requerido por `config.js` | ✅ |
-| `GRAPH_VERSION` | Versión de Graph API (default: `v22.0`) | ⬜ |
+| Variable | Uso |
+|---|---|
+| `WHATSAPP_TOKEN` | Token de Meta |
+| `PHONE_NUMBER_ID` | ID del número de WhatsApp |
+| `COURSE_LINK` | Enlace del curso |
+| `COURSE_PASSWORD` | Contraseña utilizada por el flujo de acceso |
+| `VERIFY_TOKEN` | Token de verificación/configuración |
+| `GRAPH_VERSION` | Versión de Graph API |
 
 ### Chatwoot
-| Variable | Descripción | Requerida |
-|---|---|:---:|
-| `CHATWOOT_BASE_URL` | URL de tu instancia Chatwoot | ✅ |
-| `CHATWOOT_API_TOKEN` | Token API de Chatwoot | ✅ |
-| `CHATWOOT_ACCOUNT_ID` | ID de cuenta en Chatwoot | ✅ |
-| `CHATWOOT_INBOX_ID` | ID del inbox que debe atender el bot | ✅ |
-| `CHATWOOT_WEBHOOK_TOKEN` | Token de seguridad del webhook | ✅ |
 
-### Notificaciones y dashboard
-| Variable | Descripción | Requerida |
-|---|---|:---:|
-| `API_KEY_NOTIFY` | Clave para endpoints de notificación (`x-api-key`) | ✅ |
-| `DASHBOARD_USER` | Usuario para acceder al dashboard | ✅ |
-| `DASHBOARD_PASS` | Contraseña del dashboard | ✅ |
-| `DATABASE_URL` | Conexión PostgreSQL para estadísticas y eventos del bot | ⬜ (si falta, funciona en memoria) |
+| Variable | Uso |
+|---|---|
+| `CHATWOOT_BASE_URL` | URL de Chatwoot |
+| `CHATWOOT_API_TOKEN` | Token de API |
+| `CHATWOOT_ACCOUNT_ID` | Cuenta |
+| `CHATWOOT_INBOX_ID` | Inbox permitido |
+| `CHATWOOT_WEBHOOK_TOKEN` | Protección del webhook |
 
-### Panel administrativo de certificados
-| Variable | Descripción | Requerida |
-|---|---|:---:|
-| `ADMIN_BASE_URL` | URL base de la plataforma del curso | ✅ (para `/api/admin-certificados`) |
-| `ADMIN_USERNAME` | Usuario admin de la plataforma del curso | ✅ |
-| `ADMIN_PASSWORD` | Contraseña admin de la plataforma del curso | ✅ |
-| `ADMIN_LOGIN_PATH` | Ruta de login (default: `/login`) | ⬜ |
-| `ADMIN_PANEL_PATH` | Ruta del panel de usuarios (default: `/admin`) | ⬜ |
-| `ADMIN_USER_FIELD` | Nombre del campo usuario en el form de login (default: `username`) | ⬜ |
-| `ADMIN_PASS_FIELD` | Nombre del campo contraseña en el form de login (default: `password`) | ⬜ |
-| `CERTIFICADOS_DATABASE_URL` | Conexión PostgreSQL para el caché de nombres completos | ⬜ (si falta, no se cachean nombres) |
+### Dashboard / notificaciones
+
+| Variable | Uso |
+|---|---|
+| `API_KEY_NOTIFY` | Protección de endpoints de notificación |
+| `DASHBOARD_USER` | Usuario del dashboard |
+| `DASHBOARD_PASS` | Contraseña del dashboard |
+| `DATABASE_URL` | PostgreSQL de estadísticas |
+
+### Certificados
+
+| Variable | Uso |
+|---|---|
+| `ADMIN_BASE_URL` | URL del panel externo |
+| `ADMIN_USERNAME` | Usuario administrativo |
+| `ADMIN_PASSWORD` | Contraseña administrativa |
+| `ADMIN_LOGIN_PATH` | Ruta de login |
+| `ADMIN_PANEL_PATH` | Ruta del panel |
+| `ADMIN_USER_FIELD` | Nombre del campo usuario |
+| `ADMIN_PASS_FIELD` | Nombre del campo contraseña |
+| `CERTIFICADOS_DATABASE_URL` | PostgreSQL para caché de nombres |
 
 ### Servidor
-| Variable | Descripción | Requerida |
-|---|---|:---:|
-| `PORT` | Puerto del servidor (default: `3000`) | ⬜ |
 
----
+```env
+PORT=3000
+```
 
-## 🌐 Endpoints disponibles
+Las credenciales deben configurarse en **Render → Environment** y nunca escribirse directamente en este README o dentro del código versionado.
+
+## Endpoints
 
 | Método | Endpoint | Descripción |
 |---|---|---|
-| `GET` | `/` | Preview público para bots de redes / Dashboard protegido para el resto |
-| `GET` | `/dashboard` | Dashboard protegido (siempre pide Basic Auth) |
-| `GET` | `/health` | Healthcheck público para Render/UptimeRobot |
-| `GET` | `/api/stats` | Estadísticas del bot (protegido, admite filtros por query) |
-| `GET` | `/api/admin-certificados` | Métricas generales del panel de certificados (protegido) |
-| `GET` | `/api/admin-certificados/empresa?q=` | Búsqueda de usuarios por empresa (protegido) |
-| `GET` | `/chatwoot/webhook` | Verificación Chatwoot |
-| `POST` | `/chatwoot/webhook?token=XXX` | Entrada de mensajes ⭐ |
-| `POST` | `/notify/access` | Enviar acceso al curso |
-| `POST` | `/api/notify/access` | Alias para enviar acceso al curso |
-| `POST` | `/notify/certificate` | Enviar certificado |
-| `POST` | `/certificate` | Enviar certificado (alias) |
+| `GET` | `/` | Preview público para bots o dashboard protegido. |
+| `GET` | `/dashboard` | Dashboard protegido. |
+| `GET` | `/health` | Health check. |
+| `GET` | `/api/stats` | Estadísticas filtrables. |
+| `GET` | `/api/admin-certificados` | Resumen del panel de certificados. |
+| `GET` | `/api/admin-certificados/empresa?q=` | Consulta por empresa. |
+| `GET` | `/chatwoot/webhook` | Verificación del webhook. |
+| `POST` | `/chatwoot/webhook?token=...` | Entrada principal desde Chatwoot. |
+| `POST` | `/notify/access` | Enviar acceso al curso. |
+| `POST` | `/api/notify/access` | Alias de acceso. |
+| `POST` | `/notify/certificate` | Enviar certificado. |
+| `POST` | `/certificate` | Alias de certificado. |
 
----
+## Seguridad
 
-## 🛡️ Seguridad
+- Tokens únicamente en variables de entorno.
+- Dashboard protegido con Basic Auth.
+- Webhook protegido mediante token.
+- Filtrado estricto por inbox.
+- Endpoints de notificación protegidos mediante API key.
+- Anti-spam y deduplicación por usuario/mensaje.
+- Normalización de números colombianos.
+- Logs con información sensible reducida o enmascarada.
+- Notas privadas sin credenciales.
+- Fallback controlado cuando servicios externos están temporalmente fuera de línea.
 
-- ✅ Tokens almacenados en variables de entorno (nunca en código)
-- ✅ Variables críticas de WhatsApp y del curso validadas al arranque — el servidor no inicia si falta alguna de ellas
-- ✅ Webhook protegido con token en URL (`CHATWOOT_WEBHOOK_TOKEN`)
-- ✅ Webhook filtra mensajes por `CHATWOOT_INBOX_ID` para ignorar otros canales
-- ✅ Dashboard y API de métricas protegidos con Basic Auth (`DASHBOARD_USER` / `DASHBOARD_PASS`)
-- ✅ Bots de previsualización reciben una tarjeta pública sin datos reales; el panel real nunca queda expuesto en el link compartido
-- ✅ Endpoints de notificación protegidos con `x-api-key`
-- ✅ Prevención de mensajes duplicados (deduplicación en memoria)
-- ✅ Protección anti-spam con rate limiting por usuario
-- ✅ Validación y normalización de números colombianos (+57)
-- ✅ Logs de envío a Meta enmascaran el número de destino y nunca imprimen el texto del mensaje ni credenciales
-- ✅ Notas privadas de Chatwoot nunca incluyen contraseñas ni credenciales, solo confirmación de envío
+## Estado
 
----
-
-## 🔮 Mejoras Futuras
-
-- [ ] Notificaciones automáticas al finalizar el curso
-- [ ] Integración directa con plataforma e-learning (sin scraping)
-- [ ] Persistir también la caché completa del panel de certificados en PostgreSQL
-- [ ] Generación automática de certificados
-- [ ] Exportar reportes del dashboard (CSV/Excel)
-- [ ] Soporte multi-curso y multi-sede
-- [ ] Alertas automáticas ante errores repetidos de Meta
-
----
-
-## 📌 Estado del Proyecto
-
-| Item | Estado |
+| Componente | Estado |
 |---|---|
-| Servidor en producción | 🟢 Activo |
-| Bot respondiendo mensajes | 🟢 Activo |
-| Modo asesor humano | 🟢 Activo |
-| Notas privadas automáticas en Chatwoot | 🟢 Activo |
-| Notificaciones salientes | 🟢 Activo |
-| Protección webhook | 🟢 Activo |
-| Dashboard administrativo | 🟢 Activo |
-| Panel de consulta de certificados | 🟢 Activo |
-| Persistencia en PostgreSQL | 🟢 Activo (con fallback a memoria) |
-| Anti-spam | 🟢 Activo |
+| Bot WhatsApp | Activo |
+| Integración Chatwoot | Activa |
+| Modo asesor | Activo |
+| Notas privadas | Activas |
+| Dashboard | Activo |
+| Panel de certificados | Activo |
+| PostgreSQL | Activo cuando está configurado; fallback en memoria disponible |
+| Anti-spam | Activo |
+| Deduplicación | Activa |
+| Notificaciones de acceso/certificado | Activas |
 
 ---
 
 <div align="center">
 
-## 👨‍💻 Autor
-
-**Cristian Guarín**
-Ingeniero en Sistemas
-Bogotá, Colombia
-
----
-
-*Desarrollado con ❤️ para VIP Salud Ocupacional*
+**Cristian Guarín**  
+VIP Salud Ocupacional — Bogotá, Colombia
 
 </div>
