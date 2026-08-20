@@ -1,18 +1,14 @@
 "use strict";
 
+const fs = require("fs");
+const path = require("path");
+
+function dataUrl(fileName, mime) {
+  const filePath = path.join(__dirname, "..", "..", "assets", fileName);
+  return `data:${mime};base64,${fs.readFileSync(filePath).toString("base64")}`;
+}
+
 module.exports = {
-  membrete: [
-    require("./assets.parts/membrete-01"),
-    require("./assets.parts/membrete-02"),
-    require("./assets.parts/membrete-03"),
-    require("./assets.parts/membrete-04"),
-    require("./assets.parts/membrete-05"),
-    require("./assets.parts/membrete-06"),
-    require("./assets.parts/membrete-07"),
-    require("./assets.parts/membrete-08"),
-  ].join(""),
-  firma: [
-    require("./assets.parts/firma-01"),
-    require("./assets.parts/firma-02"),
-  ].join(""),
+  membrete: dataUrl("custodia-background.jpeg", "image/jpeg"),
+  firma: dataUrl("custodia-signature.png", "image/png"),
 };
