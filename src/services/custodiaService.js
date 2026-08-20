@@ -1,12 +1,25 @@
 "use strict";
 
-const { renderHtmlToPdf } = require("./browserPdf");
+const path = require("path");
+const PDFDocument = require("pdfkit");
 
 const data = require("../data/custodia/clientes");
 const assets = require("../data/custodia/assets");
 const companies = Array.isArray(data.empresas) ? data.empresas : [];
 
-const LETTER_REPLACEMENTS = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const BACKGROUND_PATH = path.join(__dirname, "..", "assets", "custodia-background.jpeg");
+const SIGNATURE_PATH = path.join(__dirname, "..", "assets", "custodia-signature.png");
+const MM = 72 / 25.4;
+const mm = (value) => Number(value) * MM;
+
+const LETTER_REPLACEMENTS = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
 function escapeHtml(value) {
   return String(value || "").replace(/[&<>"']/g, (char) => LETTER_REPLACEMENTS[char]);
 }
@@ -44,13 +57,18 @@ function tokenScore(query, candidate) {
   function bigrams(text) {
     const compact = text.replace(/\s+/g, " ");
     const set = new Set();
-    for (let i = 0; i < compact.length - 1; i += 1) set.add(compact.slice(i, i + 2));
+    for (let i = 0; i < compact.length - 1; i += 1) {
+      set.add(compact.slice(i, i + 2));
+    }
     return set;
   }
+
   const qa = bigrams(q);
   const ca = bigrams(c);
   const biIntersection = [...qa].filter((x) => ca.has(x)).length;
-  const dice = qa.size + ca.size ? (2 * biIntersection) / (qa.size + ca.size) : 0;
+  const dice = qa.size + ca.size
+    ? (2 * biIntersection) / (qa.size + ca.size)
+    : 0;
 
   return Math.max(dice, 0.68 * coverage + 0.32 * jaccard);
 }
@@ -58,19 +76,23 @@ function tokenScore(query, candidate) {
 function dedupeCompanies(list) {
   const seen = new Set();
   const result = [];
+
   for (const item of list) {
     const key = `${item.nit}|${item.dv}|${normalizeName(item.nombre)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(item);
   }
+
   return result;
 }
 
 function findByNit(value) {
   const nit = normalizeDigits(value);
   if (!nit) return [];
-  return dedupeCompanies(companies.filter((item) => String(item.nit) === nit));
+  return dedupeCompanies(
+    companies.filter((item) => String(item.nit) === nit)
+  );
 }
 
 function findByName(value, limit = 5) {
@@ -78,7 +100,10 @@ function findByName(value, limit = 5) {
   if (query.length < 3) return [];
 
   return dedupeCompanies(companies)
-    .map((item) => ({ ...item, score: tokenScore(query, item.nombre) }))
+    .map((item) => ({
+      ...item,
+      score: tokenScore(query, item.nombre),
+    }))
     .filter((item) => item.score >= 0.46)
     .sort((a, b) => b.score - a.score || a.nombre.localeCompare(b.nombre, "es"))
     .slice(0, Math.max(1, Math.min(Number(limit) || 5, 8)));
@@ -91,7 +116,11 @@ function bogotaDateParts(date = new Date()) {
     month: "long",
     day: "numeric",
   });
-  const parts = Object.fromEntries(formatter.formatToParts(date).map((p) => [p.type, p.value]));
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).map((p) => [p.type, p.value])
+  );
+
   return {
     day: Number(parts.day),
     month: String(parts.month || "").toUpperCase(),
@@ -99,15 +128,28 @@ function bogotaDateParts(date = new Date()) {
   };
 }
 
-function getAssets() {
-  return { memberteDataUrl: assets.membrete, firmaDataUrl: assets.firma };
+function companyDv(company) {
+  if (company?.dv === 0 || company?.dv === "0") return "0";
+  return String(company?.dv ?? "").trim();
 }
 
+function getAssets() {
+  return {
+    memberteDataUrl: assets.membrete,
+    firmaDataUrl: assets.firma,
+  };
+}
+
+// Se conserva el HTML para pruebas de contenido y como representación del
+// documento, pero producción ya no depende de Chrome para Custodia Clínica.
 function buildCustodyHtml(company, date = new Date()) {
-  if (!company?.nombre || !company?.nit) throw new Error("Empresa de custodia inválida");
+  if (!company?.nombre || !company?.nit) {
+    throw new Error("Empresa de custodia inválida");
+  }
+
   const { day, month, year } = bogotaDateParts(date);
   const { memberteDataUrl: bg, firmaDataUrl: signature } = getAssets();
-  const dv = company.dv === 0 || company.dv === "0" ? "0" : String(company.dv || "").trim();
+  const dv = companyDv(company);
   const nitWithDv = `${escapeHtml(company.nit)} - ${escapeHtml(dv || "?")}`;
 
   return `<!doctype html>
@@ -156,19 +198,197 @@ function buildCustodyHtml(company, date = new Date()) {
 </html>`;
 }
 
+function renderCustodyPdf(company, date = new Date()) {
+  if (!company?.nombre || !company?.nit) {
+    return Promise.reject(new Error("Empresa de custodia inválida"));
+  }
+
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 0,
+      autoFirstPage: true,
+      compress: true,
+      info: {
+        Title: `Certificado de Custodia Clínica - ${company.nombre}`,
+        Author: "VIP Salud Ocupacional S.A.S.",
+        Subject: "Certificado de Custodia Clínica",
+      },
+    });
+
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    try {
+      const { day, month, year } = bogotaDateParts(date);
+      const dv = companyDv(company);
+      const nitWithDv = `${company.nit} - ${dv || "?"}`;
+      const pageWidth = doc.page.width;
+      const pageHeight = doc.page.height;
+
+      doc.image(BACKGROUND_PATH, 0, 0, {
+        width: pageWidth,
+        height: pageHeight,
+      });
+
+      doc.fillColor("#111111");
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(9)
+        .text(
+          `BOGOTÁ, ${day} DE ${month} DEL ${year}`,
+          mm(13.4),
+          mm(41.2),
+          { lineBreak: false }
+        );
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(11.5)
+        .text(
+          "VIP SALUD OCUPACIONAL S.A.S.",
+          mm(15),
+          mm(61.2),
+          { width: pageWidth - mm(30), align: "center" }
+        );
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(10.5)
+        .text(
+          "CERTIFICA:",
+          mm(15),
+          mm(75.4),
+          { width: pageWidth - mm(30), align: "center" }
+        );
+
+      const contentX = mm(13.4);
+      const contentY = mm(87.5);
+      const contentWidth = pageWidth - mm(13.4) - mm(19.5);
+      const textOptions = {
+        width: contentWidth,
+        lineGap: 1.8,
+      };
+
+      doc
+        .font("Helvetica")
+        .fontSize(9.1)
+        .text(
+          "Que viene realizando los exámenes médicos ocupacionales, acompañamiento en los sistemas de gestión de seguridad y salud en el trabajo y la custodia de las evaluaciones médicas ocupacionales de la empresa: ",
+          contentX,
+          contentY,
+          { ...textOptions, continued: true }
+        )
+        .font("Helvetica-Bold")
+        .text(company.nombre, { continued: true })
+        .font("Helvetica")
+        .text(" Con número de identificación tributaria ", { continued: true })
+        .font("Helvetica-Bold")
+        .text(`No. ${nitWithDv}`, { continued: true })
+        .font("Helvetica")
+        .text(
+          " se encuentra bajo nuestra responsabilidad y confidencialidad, siguiendo la RE: 1995 de 1999; ya que somos el prestador de servicios de salud ocupacional que las generó en el curso de la atención. Cumpliendo los requisitos y procedimientos de archivo conforme a las normas legales vigentes para el manejo de historias clínicas.",
+          textOptions
+        );
+
+      const secondParagraphY = doc.y + mm(4.1);
+
+      doc
+        .font("Helvetica")
+        .fontSize(9.1)
+        .text(
+          `En constancia se expide en la ciudad de Bogotá D.C. a los ${day} días del mes de ${month} del ${year} con destino al interesado.`,
+          contentX,
+          secondParagraphY,
+          textOptions
+        );
+
+      const signatureX = mm(13.4);
+      const signatureTop = mm(155.7);
+
+      doc
+        .font("Helvetica")
+        .fontSize(9)
+        .text("Cordialmente,", signatureX, signatureTop);
+
+      doc.image(
+        SIGNATURE_PATH,
+        signatureX,
+        signatureTop + mm(8.5),
+        { fit: [mm(54), mm(13)] }
+      );
+
+      let signerY = signatureTop + mm(23);
+
+      doc
+        .font("Helvetica-Bold")
+        .fontSize(9)
+        .text("Diego Mauricio Barragán Rocha", signatureX, signerY);
+
+      signerY += mm(4.5);
+      doc
+        .font("Helvetica")
+        .fontSize(9)
+        .text("Representante legal Vip Salud Ocupacional", signatureX, signerY);
+
+      signerY += mm(4.5);
+      doc.text("Tel. 3134010901", signatureX, signerY);
+
+      signerY += mm(4.5);
+      doc
+        .fillColor("#0000EE")
+        .text("vipsaludocupacional@gmail.com", signatureX, signerY, {
+          link: "mailto:vipsaludocupacional@gmail.com",
+          underline: true,
+        });
+
+      doc
+        .fillColor("#111111")
+        .font("Helvetica-Bold")
+        .fontSize(10.6)
+        .text(
+          "“BRINDAMOS PROTECCIÓN Y BIENESTAR”",
+          mm(15),
+          mm(216),
+          { width: pageWidth - mm(30), align: "center" }
+        );
+
+      doc.end();
+    } catch (error) {
+      try {
+        doc.end();
+      } catch (_) {
+      }
+      reject(error);
+    }
+  });
+}
+
 function safeFileName(name) {
-  const base = normalizeName(name).replace(/\s+/g, "_").replace(/_+/g, "_").slice(0, 70) || "EMPRESA";
+  const base = normalizeName(name)
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 70) || "EMPRESA";
+
   const { day, year } = bogotaDateParts();
-  const month = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", month: "2-digit" }).format(new Date());
+  const month = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    month: "2-digit",
+  }).format(new Date());
+
   return `CERTIFICADO_CUSTODIA_${base}_${year}-${month}-${String(day).padStart(2, "0")}.pdf`;
 }
 
 async function buildCustodyCertificate(company) {
-  const html = buildCustodyHtml(company, new Date());
-  const pdfBuffer = await renderHtmlToPdf(html);
+  const pdfBuffer = await renderCustodyPdf(company, new Date());
+
   if (!pdfBuffer?.length || pdfBuffer.subarray(0, 5).toString() !== "%PDF-") {
     throw new Error("No se pudo generar un PDF válido de custodia");
   }
+
   return {
     pdfBuffer,
     fileName: safeFileName(company.nombre),
@@ -183,5 +403,6 @@ module.exports = {
   findByName,
   bogotaDateParts,
   buildCustodyHtml,
+  renderCustodyPdf,
   buildCustodyCertificate,
 };
