@@ -1,16 +1,10 @@
 "use strict";
 
-const path = require("path");
-const PDFDocument = require("pdfkit");
-
 const data = require("../data/custodia/clientes");
 const assets = require("../data/custodia/assets");
-const companies = Array.isArray(data.empresas) ? data.empresas : [];
+const { renderHtmlToPdf } = require("./browserPdf");
 
-const BACKGROUND_PATH = path.join(__dirname, "..", "assets", "custodia-background.jpeg");
-const SIGNATURE_PATH = path.join(__dirname, "..", "assets", "custodia-signature.png");
-const MM = 72 / 25.4;
-const mm = (value) => Number(value) * MM;
+const companies = Array.isArray(data.empresas) ? data.empresas : [];
 
 const LETTER_REPLACEMENTS = {
   "&": "&amp;",
@@ -140,8 +134,6 @@ function getAssets() {
   };
 }
 
-// Se conserva el HTML para pruebas de contenido y como representación del
-// documento, pero producción ya no depende de Chrome para Custodia Clínica.
 function buildCustodyHtml(company, date = new Date()) {
   if (!company?.nombre || !company?.nit) {
     throw new Error("Empresa de custodia inválida");
@@ -198,173 +190,38 @@ function buildCustodyHtml(company, date = new Date()) {
 </html>`;
 }
 
-function renderCustodyPdf(company, date = new Date()) {
+function validPdf(buffer) {
+  return Buffer.isBuffer(buffer) &&
+    buffer.length > 5 &&
+    buffer.subarray(0, 5).toString() === "%PDF-";
+}
+
+async function renderCustodyPdf(company, date = new Date()) {
   if (!company?.nombre || !company?.nit) {
-    return Promise.reject(new Error("Empresa de custodia inválida"));
+    throw new Error("Empresa de custodia inválida");
   }
 
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    const doc = new PDFDocument({
-      size: "A4",
-      margin: 0,
-      autoFirstPage: true,
-      compress: true,
-      info: {
-        Title: `Certificado de Custodia Clínica - ${company.nombre}`,
-        Author: "VIP Salud Ocupacional S.A.S.",
-        Subject: "Certificado de Custodia Clínica",
-      },
-    });
+  const html = buildCustodyHtml(company, date);
+  let lastError = null;
 
-    doc.on("data", (chunk) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-
+  // Custodia usa el mismo motor Chrome que ya genera correctamente los
+  // certificados de Manipulación. Así evitamos el parser JPEG de PDFKit,
+  // que rechazaba el membrete en Render con `Invalid JPEG`.
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const { day, month, year } = bogotaDateParts(date);
-      const dv = companyDv(company);
-      const nitWithDv = `${company.nit} - ${dv || "?"}`;
-      const pageWidth = doc.page.width;
-      const pageHeight = doc.page.height;
-
-      doc.image(BACKGROUND_PATH, 0, 0, {
-        width: pageWidth,
-        height: pageHeight,
-      });
-
-      doc.fillColor("#111111");
-
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(9)
-        .text(
-          `BOGOTÁ, ${day} DE ${month} DEL ${year}`,
-          mm(13.4),
-          mm(41.2),
-          { lineBreak: false }
-        );
-
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(11.5)
-        .text(
-          "VIP SALUD OCUPACIONAL S.A.S.",
-          mm(15),
-          mm(61.2),
-          { width: pageWidth - mm(30), align: "center" }
-        );
-
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(10.5)
-        .text(
-          "CERTIFICA:",
-          mm(15),
-          mm(75.4),
-          { width: pageWidth - mm(30), align: "center" }
-        );
-
-      const contentX = mm(13.4);
-      const contentY = mm(87.5);
-      const contentWidth = pageWidth - mm(13.4) - mm(19.5);
-      const textOptions = {
-        width: contentWidth,
-        lineGap: 1.8,
-      };
-
-      doc
-        .font("Helvetica")
-        .fontSize(9.1)
-        .text(
-          "Que viene realizando los exámenes médicos ocupacionales, acompañamiento en los sistemas de gestión de seguridad y salud en el trabajo y la custodia de las evaluaciones médicas ocupacionales de la empresa: ",
-          contentX,
-          contentY,
-          { ...textOptions, continued: true }
-        )
-        .font("Helvetica-Bold")
-        .text(company.nombre, { continued: true })
-        .font("Helvetica")
-        .text(" Con número de identificación tributaria ", { continued: true })
-        .font("Helvetica-Bold")
-        .text(`No. ${nitWithDv}`, { continued: true })
-        .font("Helvetica")
-        .text(
-          " se encuentra bajo nuestra responsabilidad y confidencialidad, siguiendo la RE: 1995 de 1999; ya que somos el prestador de servicios de salud ocupacional que las generó en el curso de la atención. Cumpliendo los requisitos y procedimientos de archivo conforme a las normas legales vigentes para el manejo de historias clínicas.",
-          textOptions
-        );
-
-      const secondParagraphY = doc.y + mm(4.1);
-
-      doc
-        .font("Helvetica")
-        .fontSize(9.1)
-        .text(
-          `En constancia se expide en la ciudad de Bogotá D.C. a los ${day} días del mes de ${month} del ${year} con destino al interesado.`,
-          contentX,
-          secondParagraphY,
-          textOptions
-        );
-
-      const signatureX = mm(13.4);
-      const signatureTop = mm(155.7);
-
-      doc
-        .font("Helvetica")
-        .fontSize(9)
-        .text("Cordialmente,", signatureX, signatureTop);
-
-      doc.image(
-        SIGNATURE_PATH,
-        signatureX,
-        signatureTop + mm(8.5),
-        { fit: [mm(54), mm(13)] }
-      );
-
-      let signerY = signatureTop + mm(23);
-
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(9)
-        .text("Diego Mauricio Barragán Rocha", signatureX, signerY);
-
-      signerY += mm(4.5);
-      doc
-        .font("Helvetica")
-        .fontSize(9)
-        .text("Representante legal Vip Salud Ocupacional", signatureX, signerY);
-
-      signerY += mm(4.5);
-      doc.text("Tel. 3134010901", signatureX, signerY);
-
-      signerY += mm(4.5);
-      doc
-        .fillColor("#0000EE")
-        .text("vipsaludocupacional@gmail.com", signatureX, signerY, {
-          link: "mailto:vipsaludocupacional@gmail.com",
-          underline: true,
-        });
-
-      doc
-        .fillColor("#111111")
-        .font("Helvetica-Bold")
-        .fontSize(10.6)
-        .text(
-          "“BRINDAMOS PROTECCIÓN Y BIENESTAR”",
-          mm(15),
-          mm(216),
-          { width: pageWidth - mm(30), align: "center" }
-        );
-
-      doc.end();
+      const pdf = await renderHtmlToPdf(html);
+      if (validPdf(pdf)) return pdf;
+      lastError = new Error("Chrome devolvió un archivo que no es PDF");
     } catch (error) {
-      try {
-        doc.end();
-      } catch (_) {
-      }
-      reject(error);
+      lastError = error;
+      console.warn(
+        `⚠️ Render PDF Custodia intento ${attempt}/2:`,
+        error.message
+      );
     }
-  });
+  }
+
+  throw lastError || new Error("No se pudo generar el PDF de custodia");
 }
 
 function safeFileName(name) {
@@ -385,7 +242,7 @@ function safeFileName(name) {
 async function buildCustodyCertificate(company) {
   const pdfBuffer = await renderCustodyPdf(company, new Date());
 
-  if (!pdfBuffer?.length || pdfBuffer.subarray(0, 5).toString() !== "%PDF-") {
+  if (!validPdf(pdfBuffer)) {
     throw new Error("No se pudo generar un PDF válido de custodia");
   }
 
