@@ -141,6 +141,12 @@ function maskDocument(value) {
   return `${digits.slice(0, 2)}***${digits.slice(-2)}`;
 }
 
+function displayDv(company) {
+  if (company?.dv === 0 || company?.dv === "0") return "0";
+  const dv = String(company?.dv ?? "").trim();
+  return dv || "?";
+}
+
 async function sendRootMenu(to, conversationId = null) {
   clearFlow(to, false);
   clearAdvisorMode(to, false);
@@ -198,19 +204,19 @@ async function sendRecibidoConfirmacion(to, conversationId = null) {
 
 async function askManipulationDocument(to) {
   setFlow(to, { type: "manip_cert", step: "await_document", data: {} });
-  return sendText(to, "📄 *Descargar certificado de Manipulación de Alimentos*\n\nPor favor escribe el número de cédula del estudiante.\n\nEjemplo: *1054538952*\n\nPuedes enviarlo con puntos, espacios o guiones; lo normalizaremos automáticamente.\n\nSi deseas cancelar, escribe *SALIR*.");
+  return sendText(to, "📄 *Descargar certificado de Manipulación de Alimentos*\n\nPor favor escribe el número de cédula del estudiante.\n\nEjemplo de formato: *##########* (solo números).\n\nPuedes enviarlo con puntos, espacios o guiones; lo normalizaremos automáticamente.\n\nSi deseas cancelar, escribe *SALIR*.");
 }
 
 async function askCustodyNit(to) {
   setFlow(to, { type: "custodia", step: "await_nit", data: {} });
-  return sendText(to, "📄 *Certificado de Custodia Clínica*\n\nPara identificar la empresa con precisión, escribe el *NIT sin dígito de verificación (DV)*.\n\nEjemplo: *900767372*\n\nPuedes enviarlo con puntos, espacios o guiones.\n\nSi deseas cancelar, escribe *SALIR*.");
+  return sendText(to, "📄 *Certificado de Custodia Clínica*\n\nPara identificar la empresa con precisión, escribe el *NIT sin dígito de verificación (DV)*.\n\nEjemplo de formato: *#########* (solo números, sin DV).\n\nPuedes enviarlo con puntos, espacios o guiones.\n\nSi deseas cancelar, escribe *SALIR*.");
 }
 
 async function sendCustodyConfirmation(to, company) {
   setFlow(to, { type: "custodia", step: "confirm_company", data: { company } });
   return sendPayload({ messaging_product: "whatsapp", to, type: "interactive", interactive: {
     type: "button",
-    body: { text: `Encontré la siguiente empresa:\n\n🏢 *${company.nombre}*\nNIT: *${company.nit}-${company.dv || "?"}*\n\n¿Esta es tu empresa?` },
+    body: { text: `Encontré la siguiente empresa:\n\n🏢 *${company.nombre}*\nNIT: *${company.nit}-${displayDv(company)}*\n\n¿Esta es tu empresa?` },
     action: { buttons: [
       { type: "reply", reply: { id: "custodia_confirm_si", title: "✅ Sí" } },
       { type: "reply", reply: { id: "custodia_buscar_nombre", title: "🔎 Buscar nombre" } },
@@ -236,7 +242,7 @@ async function processManipulationDocument(waId, rawText, conversationId) {
   const documento = String(rawText || "").replace(/\D/g, "");
   if (documento.length < 5 || documento.length > 15) {
     touchFlow(waId);
-    return sendText(waId, "⚠️ El número de cédula no parece válido.\n\nEnvíalo nuevamente; puedes usar puntos, espacios o guiones.\n\nEjemplo: *1054538952*");
+    return sendText(waId, "⚠️ El número de cédula no parece válido.\n\nEnvíalo nuevamente; puedes usar puntos, espacios o guiones.\n\nEjemplo de formato: *##########* (solo números).");
   }
   try {
     const result = await buildManipulationCertificate(documento);
@@ -269,12 +275,12 @@ async function generateAndSendCustody(waId, company, conversationId) {
   try {
     await sendText(waId, `✅ Empresa confirmada:\n*${company.nombre}*\n\n⏳ Generando el certificado de custodia clínica...`);
     const result = await buildCustodyCertificate(company);
-    const caption = `📄 *Certificado de Custodia Clínica*\n\n🏢 ${company.nombre}\nNIT: ${company.nit}-${company.dv || "?"}\n\nEl documento fue generado con la fecha actual y se adjunta en PDF.`;
+    const caption = `📄 *Certificado de Custodia Clínica*\n\n🏢 ${company.nombre}\nNIT: ${company.nit}-${displayDv(company)}\n\nEl documento fue generado con la fecha actual y se adjunta en PDF.`;
     const sent = await sendDocumentBuffer(waId, result.pdfBuffer, { fileName: result.fileName, caption, mimeType: "application/pdf" });
     if (!sent) throw new Error("Meta no aceptó el PDF de custodia");
     clearFlow(waId);
     Stats.certificadoEnviado(company.nombre);
-    await crearNotaPrivadaChatwoot(conversationId, `📄 Certificado de Custodia Clínica generado y enviado automáticamente para ${company.nombre} — NIT ${company.nit}-${company.dv || "?"}.`);
+    await crearNotaPrivadaChatwoot(conversationId, `📄 Certificado de Custodia Clínica generado y enviado automáticamente para ${company.nombre} — NIT ${company.nit}-${displayDv(company)}.`);
     return sent;
   } catch (error) {
     console.error("❌ Error generando certificado de custodia:", error);
@@ -292,14 +298,14 @@ async function processCustodyText(waId, rawText, conversationId) {
   if (state.step === "await_nit") {
     const nit = normalizeDigits(rawText);
     if (nit.length < 6 || nit.length > 12) {
-      await sendText(waId, "⚠️ El NIT no parece válido. Envíalo *sin DV*. Ejemplo: *900767372*.");
+      await sendText(waId, "⚠️ El NIT no parece válido. Envíalo *sin DV*.\n\nEjemplo de formato: *#########* (solo números).");
       return true;
     }
     const matches = findByNit(nit);
     if (!matches.length) { await sendCustodyNotFoundMenu(waId); return true; }
     if (matches.length === 1) { await sendCustodyConfirmation(waId, matches[0]); return true; }
     setFlow(waId, { type: "custodia", step: "choose_nit_company", data: { candidates: matches } });
-    const lines = matches.slice(0, 8).map((item, index) => `${index + 1}. ${item.nombre} — NIT ${item.nit}-${item.dv || "?"}`);
+    const lines = matches.slice(0, 8).map((item, index) => `${index + 1}. ${item.nombre} — NIT ${item.nit}-${displayDv(item)}`);
     await sendText(waId, "Encontré más de una razón social asociada a ese NIT.\n\n" + lines.join("\n") + "\n\nResponde con el número de la empresa correcta.");
     return true;
   }
@@ -328,7 +334,7 @@ async function processCustodyText(waId, rawText, conversationId) {
       return true;
     }
     setFlow(waId, { type: "custodia", step: "choose_name_company", data: { candidates: matches } });
-    const lines = matches.map((item, index) => `${index + 1}. ${item.nombre} — NIT ${item.nit}-${item.dv || "?"}`);
+    const lines = matches.map((item, index) => `${index + 1}. ${item.nombre} — NIT ${item.nit}-${displayDv(item)}`);
     await sendText(waId, "Encontré varias empresas similares:\n\n" + lines.join("\n") + "\n\nResponde con el número de la empresa correcta.");
     return true;
   }
@@ -389,7 +395,7 @@ async function handleButton(waId, buttonId, conversationId = null) {
   if (buttonId === "custodia_otro_nit") return askCustodyNit(waId);
   if (buttonId === "custodia_buscar_nombre") {
     setFlow(waId, { type: "custodia", step: "await_company_name", data: {} });
-    return sendText(waId, "Escribe el *nombre de la empresa tal como aparece en el RUT*, o lo más parecido posible.\n\nEjemplo: *TEMPORALES AVANZADOS SAS*");
+    return sendText(waId, "Escribe el *nombre de la empresa tal como aparece en el RUT*, o lo más parecido posible.\n\nEjemplo de formato: *NOMBRE DE LA EMPRESA SAS*.");
   }
   if (buttonId === "custodia_confirm_si") {
     const state = userFlows.get(waId);
