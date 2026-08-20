@@ -1,11 +1,13 @@
 {
   "name": "whatsapp-webhook",
-  "version": "1.0.0",
-  "description": "Bot WhatsApp VIP - Curso Manipulación de Alimentos",
+  "version": "1.1.0",
+  "description": "Bot WhatsApp VIP - Manipulación de Alimentos y Certificados de Custodia Clínica",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check src/routes/chatwoot.js && node --check src/services/whatsapp.js && node --check src/services/certificadosBotService.js && node --check src/services/manipulacionCertificateService.js && node --check src/services/custodiaService.js && node --check src/services/browserPdf.js"
   },
   "engines": {
     "node": "24.x"
@@ -16,6 +18,7 @@
     "cheerio": "^1.2.0",
     "express": "^4.19.2",
     "pg": "^8.21.0",
+    "puppeteer": "^24.16.0",
     "tough-cookie": "^6.0.1"
   }
 }
