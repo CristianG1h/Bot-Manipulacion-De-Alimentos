@@ -1,9 +1,13 @@
 "use strict";
 
+const fs = require("fs");
+
 let browserPromise = null;
 let shuttingDown = false;
 
-const MAX_PAGES = Math.max(1, Number(process.env.PDF_BROWSER_CONCURRENCY || 2));
+// Render Free tiene recursos limitados. Una sola página concurrente evita
+// picos de memoria al generar certificados simultáneamente.
+const MAX_PAGES = Math.max(1, Number(process.env.PDF_BROWSER_CONCURRENCY || 1));
 let activePages = 0;
 const waiters = [];
 
@@ -22,32 +26,69 @@ function releaseSlot() {
   if (next) next();
 }
 
+function resolveExecutablePath(puppeteer) {
+  const explicit = String(process.env.PUPPETEER_EXECUTABLE_PATH || "").trim();
+  if (explicit && fs.existsSync(explicit)) return explicit;
+
+  try {
+    const bundled = puppeteer.executablePath();
+    if (bundled && fs.existsSync(bundled)) return bundled;
+  } catch (_) {
+  }
+
+  const candidates = [
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(
+    "Chrome/Chromium no está disponible. El build debe ejecutar `npx puppeteer browsers install chrome`."
+  );
+}
+
 async function getBrowser() {
   if (shuttingDown) throw new Error("Navegador PDF cerrándose");
 
   if (!browserPromise) {
     browserPromise = (async () => {
       const puppeteer = require("puppeteer");
-      const launchOptions = {
+      const executablePath = resolveExecutablePath(puppeteer);
+
+      console.log("🖨️ Motor PDF Chrome listo:", executablePath);
+
+      const browser = await puppeteer.launch({
         headless: true,
+        executablePath,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-dev-shm-usage",
           "--disable-gpu",
           "--no-zygote",
+          "--disable-background-networking",
+          "--disable-default-apps",
+          "--disable-extensions",
+          "--disable-sync",
+          "--metrics-recording-only",
+          "--mute-audio",
+          "--no-first-run",
         ],
-      };
+      });
 
-      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-      }
+      browser.on("disconnected", () => {
+        browserPromise = null;
+      });
 
-      const browser = await puppeteer.launch(launchOptions);
-      browser.on("disconnected", () => { browserPromise = null; });
       return browser;
     })().catch((error) => {
       browserPromise = null;
+      console.error("❌ No se pudo iniciar Chrome para PDF:", error.message);
       throw error;
     });
   }
@@ -58,61 +99,95 @@ async function getBrowser() {
 async function withPage(fn) {
   await acquireSlot();
   let page = null;
+
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
-    page.setDefaultNavigationTimeout(Number(process.env.PDF_NAV_TIMEOUT_MS || 30000));
-    page.setDefaultTimeout(Number(process.env.PDF_ACTION_TIMEOUT_MS || 15000));
+
+    page.setDefaultNavigationTimeout(
+      Number(process.env.PDF_NAV_TIMEOUT_MS || 30000)
+    );
+    page.setDefaultTimeout(
+      Number(process.env.PDF_ACTION_TIMEOUT_MS || 15000)
+    );
+
     return await fn(page);
   } finally {
     if (page) {
-      try { await page.close(); } catch (_) {}
+      try {
+        await page.close();
+      } catch (_) {
+      }
     }
     releaseSlot();
   }
 }
 
+async function waitForFonts(page) {
+  await page.evaluate(async () => {
+    if (document.fonts?.ready) {
+      try {
+        await document.fonts.ready;
+      } catch (_) {
+      }
+    }
+  });
+}
+
 async function renderUrlToPdf(url) {
   return withPage(async (page) => {
-    await page.goto(url, { waitUntil: "networkidle2" });
-    await page.emulateMediaType("print");
-    await page.evaluate(async () => {
-      if (document.fonts?.ready) {
-        try { await document.fonts.ready; } catch (_) {}
-      }
+    const response = await page.goto(String(url), {
+      waitUntil: "networkidle2",
     });
 
-    return Buffer.from(await page.pdf({
+    if (!response) {
+      throw new Error("La página del certificado no respondió");
+    }
+
+    const status = response.status();
+    if (status >= 400) {
+      throw new Error(`La página del certificado respondió HTTP ${status}`);
+    }
+
+    await page.emulateMediaType("print");
+    await waitForFonts(page);
+
+    const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
       preferCSSPageSize: true,
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
-    }));
+    });
+
+    return Buffer.from(pdf);
   });
 }
 
 async function renderHtmlToPdf(html) {
   return withPage(async (page) => {
-    await page.setContent(String(html || ""), { waitUntil: "networkidle0" });
-    await page.emulateMediaType("print");
-    await page.evaluate(async () => {
-      if (document.fonts?.ready) {
-        try { await document.fonts.ready; } catch (_) {}
-      }
+    await page.setContent(String(html || ""), {
+      waitUntil: "networkidle0",
     });
 
-    return Buffer.from(await page.pdf({
+    await page.emulateMediaType("print");
+    await waitForFonts(page);
+
+    const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
       preferCSSPageSize: true,
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
-    }));
+    });
+
+    return Buffer.from(pdf);
   });
 }
 
 async function shutdownBrowser() {
   shuttingDown = true;
+
   if (!browserPromise) return;
+
   try {
     const browser = await browserPromise;
     await browser.close();
