@@ -9,6 +9,7 @@ const {
   findByName,
   bogotaDateParts,
   buildCustodyHtml,
+  renderCustodyPdf,
 } = require("../src/services/custodiaService");
 
 test("normaliza NIT con puntos, espacios y guiones", () => {
@@ -40,4 +41,12 @@ test("HTML de custodia contiene razón social, NIT-DV y ambas fechas", () => {
   assert.match(html, /BIOQUIMICOS COLOMBIANOS LTDA BIOCOL LTDA/);
   assert.match(html, /No\. 860501595 - 0/);
   assert.match(html, /a los 20 días del mes de AGOSTO del 2026/);
+});
+
+test("custodia genera un PDF real sin depender de Chrome", async () => {
+  const company = findByNit("860501595")[0];
+  const pdf = await renderCustodyPdf(company, new Date("2026-08-20T16:30:00Z"));
+  assert.ok(Buffer.isBuffer(pdf));
+  assert.ok(pdf.length > 1000);
+  assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
 });
