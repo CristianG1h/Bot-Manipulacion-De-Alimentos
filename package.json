@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-webhook",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Bot WhatsApp VIP - Manipulación de Alimentos y Certificados de Custodia Clínica",
   "main": "src/server.js",
   "type": "commonjs",
@@ -17,6 +17,7 @@
     "axios-cookiejar-support": "^7.0.0",
     "cheerio": "^1.2.0",
     "express": "^4.19.2",
+    "pdfkit": "^0.17.2",
     "pg": "^8.21.0",
     "puppeteer": "^24.16.0",
     "tough-cookie": "^6.0.1"
