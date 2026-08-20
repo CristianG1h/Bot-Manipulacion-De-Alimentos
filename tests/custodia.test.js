@@ -43,7 +43,7 @@ test("HTML de custodia contiene razón social, NIT-DV y ambas fechas", () => {
   assert.match(html, /a los 20 días del mes de AGOSTO del 2026/);
 });
 
-test("custodia genera un PDF real sin depender de Chrome", async () => {
+test("custodia genera un PDF real con el motor Chrome compartido", async () => {
   const company = findByNit("860501595")[0];
   const pdf = await renderCustodyPdf(company, new Date("2026-08-20T16:30:00Z"));
   assert.ok(Buffer.isBuffer(pdf));
