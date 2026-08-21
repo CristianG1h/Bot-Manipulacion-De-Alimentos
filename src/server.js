@@ -8,6 +8,11 @@ const certificateRouter = require("./routes/certificate");
 const chatwootRouter = require("./routes/chatwoot");
 const adminCertificadosRouter = require("./routes/adminCertificados");
 const Stats = require("./services/stats");
+const {
+  startCustodiaBiofileSync,
+  getCustodiaSyncStatus,
+  syncCustodiaCompanies,
+} = require("./services/biofileCustodiaSync");
 
 const app = express();
 
@@ -194,8 +199,28 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
     });
   }
 });
+
 // API certificados admin protegida
 app.use("/api/admin-certificados", protegerDashboard, adminCertificadosRouter);
+
+// Estado de la sincronización de empresas de Custodia Clínica con BIOFILE.
+app.get("/api/custodia-sync-status", protegerDashboard, (_req, res) => {
+  return res.json(getCustodiaSyncStatus());
+});
+
+// Permite verificar o forzar una actualización sin esperar las próximas 24 h.
+app.post("/api/custodia-sync-now", protegerDashboard, async (_req, res) => {
+  try {
+    const result = await syncCustodiaCompanies({ reason: "manual-api" });
+    return res.json({ ...result, status: getCustodiaSyncStatus() });
+  } catch (error) {
+    return res.status(502).json({
+      ok: false,
+      error: error.message,
+      status: getCustodiaSyncStatus(),
+    });
+  }
+});
 
 // Healthcheck público para Render/UptimeRobot
 app.get("/health", (req, res) => {
@@ -222,4 +247,9 @@ app.listen(PORT, () => {
   console.log(`🔎 API stats con filtros activa en /api/stats`);
   console.log(`💬 Chatwoot webhook activo en /chatwoot/webhook`);
   console.log(`📁 Dashboard path: ${dashboardPath}`);
+
+  // Render permanece encendido: se consulta BIOFILE al iniciar y luego cada 24 h.
+  // Si la consulta falla, el catálogo embebido continúa disponible y se reintenta
+  // en la siguiente ejecución o mediante /api/custodia-sync-now.
+  startCustodiaBiofileSync();
 });
