@@ -1,9 +1,6 @@
 "use strict";
 
-const axios = require("axios");
-const cheerio = require("cheerio");
-const { CookieJar } = require("tough-cookie");
-const { wrapper } = require("axios-cookiejar-support");
+const puppeteer = require("puppeteer");
 const custodiaData = require("../data/custodia/clientes");
 
 const DEFAULT_CLIENTES_URL =
@@ -37,6 +34,7 @@ const state = {
   lastNewCount: 0,
   lastNewCompanies: [],
   lastFechaHasta: null,
+  lastLoginMode: null,
   nextScheduledAt: null,
 };
 
@@ -124,6 +122,7 @@ function dedupeCompanies(list) {
       nit,
       dv: normalizeDv(company?.dv),
     };
+
     const key = companyKey(normalized);
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -147,7 +146,7 @@ function parseMaybeJson(value) {
 function extractRowsFromResponse(raw) {
   let current = parseMaybeJson(raw);
 
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 6; i += 1) {
     if (current && typeof current === "object" && !Array.isArray(current)) {
       if (Object.prototype.hasOwnProperty.call(current, "d")) {
         current = parseMaybeJson(current.d);
@@ -229,101 +228,125 @@ function bogotaDateString(date = new Date()) {
   return `${values.day}/${values.month}/${values.year}`;
 }
 
-function responseFinalUrl(response, fallback = "") {
-  return String(response?.request?.res?.responseUrl || fallback || "");
+async function isLoginPage(page) {
+  if (/IniciarSesion/i.test(page.url())) return true;
+  return page.evaluate(() => {
+    const visible = (el) => {
+      if (!el) return false;
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    };
+    return Array.from(document.querySelectorAll('input[type="password"]')).some(visible);
+  });
 }
 
-function htmlLooksLikeLogin(html, url = "") {
-  if (/IniciarSesion/i.test(String(url || ""))) return true;
-  try {
-    const $ = cheerio.load(String(html || ""));
-    return $("input[type='password']").length > 0;
-  } catch (_) {
-    return false;
-  }
-}
+async function submitLogin(page, user, password) {
+  const navigation = page
+    .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 12000 })
+    .catch(() => null);
 
-function createHttpClient() {
-  const jar = new CookieJar();
-  return wrapper(
-    axios.create({
-      jar,
-      withCredentials: true,
-      timeout: Number(process.env.BIOFILE_HTTP_TIMEOUT_MS || 30000),
-      maxRedirects: 8,
-      validateStatus: (status) => status >= 200 && status < 400,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/json,text/javascript;q=0.9,*/*;q=0.8",
-        "Accept-Language": "es-CO,es;q=0.9,en;q=0.8",
-      },
-    })
+  const result = await page.evaluate(
+    ({ userValue, passwordValue }) => {
+      const visible = (el) => {
+        if (!el) return false;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return (
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          rect.width > 0 &&
+          rect.height > 0
+        );
+      };
+
+      const setNativeValue = (input, value) => {
+        const descriptor = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value"
+        );
+        if (descriptor?.set) descriptor.set.call(input, value);
+        else input.value = value;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+
+      const inputs = Array.from(document.querySelectorAll("input")).filter(visible);
+      const passwordInput = inputs.find(
+        (input) => String(input.type || "").toLowerCase() === "password"
+      );
+      const userInput = inputs.find((input) => {
+        const type = String(input.type || "text").toLowerCase();
+        return input !== passwordInput && ["text", "email"].includes(type);
+      });
+
+      if (!userInput || !passwordInput) {
+        return { ok: false, error: "No se encontraron los campos visibles de acceso" };
+      }
+
+      setNativeValue(userInput, userValue);
+      setNativeValue(passwordInput, passwordValue);
+
+      const candidates = Array.from(
+        document.querySelectorAll('button,input[type="submit"],input[type="button"],a')
+      ).filter(visible);
+
+      const button =
+        candidates.find((element) => {
+          const text = String(
+            element.innerText || element.value || element.textContent || ""
+          )
+            .replace(/\s+/g, " ")
+            .trim();
+          return /ingresar\s+al\s+sistema|ingresar|iniciar\s+sesi[oó]n|acceder/i.test(text);
+        }) || candidates.find((element) => element.tagName === "BUTTON") || candidates[0];
+
+      if (!button) {
+        return { ok: false, error: "No se encontró el botón de ingreso" };
+      }
+
+      button.click();
+      return { ok: true };
+    },
+    { userValue: user, passwordValue: password }
   );
+
+  if (!result?.ok) {
+    throw new Error(result?.error || "No fue posible completar el formulario de login");
+  }
+
+  await navigation;
+  await new Promise((resolve) => setTimeout(resolve, 1200));
 }
 
-function buildLoginPayload(html, finalUrl, user, password) {
-  const $ = cheerio.load(String(html || ""));
-  const form = $("form").first();
-  if (!form.length) {
-    throw new Error("No se encontró el formulario de inicio de sesión de BIOFILE");
-  }
-
-  const payload = {};
-  form.find("input").each((_, input) => {
-    const name = $(input).attr("name");
-    if (!name) return;
-    const type = String($(input).attr("type") || "text").toLowerCase();
-    if (["checkbox", "radio", "file"].includes(type)) return;
-    payload[name] = $(input).attr("value") || "";
+async function launchBrowser() {
+  const executablePath = puppeteer.executablePath();
+  return puppeteer.launch({
+    headless: true,
+    executablePath,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--no-zygote",
+      "--disable-background-networking",
+      "--disable-default-apps",
+      "--disable-extensions",
+      "--disable-sync",
+      "--metrics-recording-only",
+      "--mute-audio",
+      "--no-first-run",
+    ],
   });
-
-  const inputs = form.find("input").toArray();
-  const userInput = inputs.find((input) => {
-    const type = String($(input).attr("type") || "text").toLowerCase();
-    return ["text", "email"].includes(type) && Boolean($(input).attr("name"));
-  });
-  const passwordInput = inputs.find((input) => {
-    const type = String($(input).attr("type") || "").toLowerCase();
-    return type === "password" && Boolean($(input).attr("name"));
-  });
-
-  if (!userInput || !passwordInput) {
-    throw new Error("No se identificaron los campos de usuario y contraseña de BIOFILE");
-  }
-
-  payload[$(userInput).attr("name")] = user;
-  payload[$(passwordInput).attr("name")] = password;
-
-  const submitCandidates = form.find("input[type='submit'],button").toArray();
-  const preferredSubmit =
-    submitCandidates.find((element) => {
-      const text = String(
-        $(element).attr("value") || $(element).text() || ""
-      ).trim();
-      return /ingresar|iniciar|entrar/i.test(text);
-    }) || submitCandidates[0];
-
-  if (preferredSubmit) {
-    const name = $(preferredSubmit).attr("name");
-    if (name) {
-      payload[name] =
-        $(preferredSubmit).attr("value") ||
-        $(preferredSubmit).text().trim() ||
-        "Ingresar al sistema";
-    }
-  }
-
-  const action = new URL(
-    form.attr("action") || finalUrl || clientesUrl(),
-    finalUrl || clientesUrl()
-  ).href;
-
-  return { action, payload };
 }
 
-async function ensureLogin(client) {
+async function fetchBiofileCompanies() {
   const { user, password } = envCredentials();
   if (!user || !password) {
     throw new Error(
@@ -331,73 +354,109 @@ async function ensureLogin(client) {
     );
   }
 
-  let response = await client.get(clientesUrl());
-  let finalUrl = responseFinalUrl(response, clientesUrl());
+  const browser = await launchBrowser();
+  let page = null;
 
-  if (!htmlLooksLikeLogin(response.data, finalUrl)) {
-    return response;
-  }
+  try {
+    page = await browser.newPage();
+    page.setDefaultNavigationTimeout(
+      Number(process.env.BIOFILE_BROWSER_NAV_TIMEOUT_MS || 30000)
+    );
+    page.setDefaultTimeout(
+      Number(process.env.BIOFILE_BROWSER_ACTION_TIMEOUT_MS || 15000)
+    );
 
-  const login = buildLoginPayload(response.data, finalUrl, user, password);
-  response = await client.post(
-    login.action,
-    new URLSearchParams(login.payload).toString(),
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Referer: finalUrl,
-      },
+    await page.goto(clientesUrl(), {
+      waitUntil: "domcontentloaded",
+      timeout: Number(process.env.BIOFILE_BROWSER_NAV_TIMEOUT_MS || 30000),
+    });
+
+    if (await isLoginPage(page)) {
+      state.lastLoginMode = "browser-form";
+      console.log("🔐 Custodia BIOFILE: iniciando sesión mediante el formulario web.");
+      await submitLogin(page, user, password);
+    } else {
+      state.lastLoginMode = "existing-session";
     }
-  );
 
-  finalUrl = responseFinalUrl(response, login.action);
-  if (htmlLooksLikeLogin(response.data, finalUrl)) {
-    throw new Error(
-      "BIOFILE no aceptó el inicio de sesión. Revisa usuario, contraseña o una validación adicional."
+    // Entrar expresamente a Clientes.aspx después del login. Esto reproduce
+    // el flujo manual y garantiza que la llamada AJAX se haga con la sesión
+    // y las cookies reales de BIOFILE.
+    await page.goto(clientesUrl(), {
+      waitUntil: "domcontentloaded",
+      timeout: Number(process.env.BIOFILE_BROWSER_NAV_TIMEOUT_MS || 30000),
+    });
+
+    if (await isLoginPage(page)) {
+      throw new Error(
+        "BIOFILE volvió a mostrar la pantalla de acceso después de enviar el formulario."
+      );
+    }
+
+    const fechaHasta = bogotaDateString();
+    const payload = {
+      NombreAcuerdoComercial: "",
+      NumeroIdentificacionCliente: "",
+      Nombre: "",
+      FechaDesde: "",
+      FechaHasta: fechaHasta,
+    };
+
+    const response = await page.evaluate(
+      async ({ endpoint, body }) => {
+        const result = await fetch(endpoint, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            Accept: "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/json; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: JSON.stringify(body),
+        });
+
+        return {
+          ok: result.ok,
+          status: result.status,
+          url: result.url,
+          text: await result.text(),
+        };
+      },
+      { endpoint: listEndpoint(), body: payload }
     );
+
+    if (!response?.ok) {
+      throw new Error(
+        `La consulta de empresas de BIOFILE respondió HTTP ${response?.status || "desconocido"}`
+      );
+    }
+
+    if (/IniciarSesion/i.test(String(response.url || ""))) {
+      throw new Error("La sesión de BIOFILE expiró antes de consultar las empresas");
+    }
+
+    const rows = extractRowsFromResponse(response.text);
+    const companies = mapBiofileRows(rows);
+
+    if (rows.length < minRows() || companies.length < minRows()) {
+      throw new Error(
+        `BIOFILE devolvió pocos registros (${rows.length} filas / ${companies.length} empresas únicas); se conserva el catálogo anterior por seguridad.`
+      );
+    }
+
+    return { rows, companies, fechaHasta };
+  } finally {
+    if (page) {
+      try {
+        await page.close();
+      } catch (_) {
+      }
+    }
+    try {
+      await browser.close();
+    } catch (_) {
+    }
   }
-
-  response = await client.get(clientesUrl());
-  finalUrl = responseFinalUrl(response, clientesUrl());
-  if (htmlLooksLikeLogin(response.data, finalUrl)) {
-    throw new Error("La sesión de BIOFILE no quedó activa después del login");
-  }
-
-  return response;
-}
-
-async function fetchBiofileCompanies() {
-  const client = createHttpClient();
-  await ensureLogin(client);
-
-  const fechaHasta = bogotaDateString();
-  const payload = {
-    NombreAcuerdoComercial: "",
-    NumeroIdentificacionCliente: "",
-    Nombre: "",
-    FechaDesde: "",
-    FechaHasta: fechaHasta,
-  };
-
-  const response = await client.post(listEndpoint(), payload, {
-    headers: {
-      Accept: "application/json, text/javascript, */*; q=0.01",
-      "Content-Type": "application/json; charset=UTF-8",
-      "X-Requested-With": "XMLHttpRequest",
-      Referer: clientesUrl(),
-    },
-  });
-
-  const rows = extractRowsFromResponse(response.data);
-  const companies = mapBiofileRows(rows);
-
-  if (rows.length < minRows() || companies.length < minRows()) {
-    throw new Error(
-      `BIOFILE devolvió pocos registros (${rows.length} filas / ${companies.length} empresas únicas); se conserva el catálogo anterior por seguridad.`
-    );
-  }
-
-  return { rows, companies, fechaHasta };
 }
 
 function applyCompanies(remoteCompanies) {
@@ -409,8 +468,6 @@ function applyCompanies(remoteCompanies) {
   const before = dedupeCompanies(target);
   const beforeKeys = new Set(before.map(companyKey));
 
-  // BIOFILE va primero para que, si un NIT/nombre ya existía, prevalezcan
-  // sus datos más recientes (por ejemplo, un DV corregido).
   const merged = dedupeCompanies([
     ...remoteCompanies,
     ...before,
@@ -418,7 +475,6 @@ function applyCompanies(remoteCompanies) {
   ]);
 
   const added = merged.filter((company) => !beforeKeys.has(companyKey(company)));
-
   target.splice(0, target.length, ...merged);
 
   return {
@@ -530,7 +586,7 @@ function startCustodiaBiofileSync() {
     try {
       await syncCustodiaCompanies({ reason });
     } catch (_) {
-      // El catálogo embebido permanece disponible si BIOFILE no responde.
+      // Si BIOFILE falla, el catálogo embebido sigue disponible.
     } finally {
       state.nextScheduledAt = new Date(Date.now() + everyMs).toISOString();
     }
