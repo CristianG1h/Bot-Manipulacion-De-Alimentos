@@ -150,32 +150,120 @@ function buildCustodyHtml(company, date = new Date()) {
 <meta charset="utf-8">
 <style>
   @page { size: A4; margin: 0; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; width: 210mm; height: 297mm; }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 210mm;
+    height: 297mm;
+    background: #fff;
+  }
   body { font-family: Arial, Helvetica, sans-serif; color: #111; }
-  .page { position: relative; width: 210mm; height: 297mm; overflow: hidden; background: url("${bg}") center/100% 100% no-repeat; }
-  .date { position: absolute; left: 13.4mm; top: 41.2mm; font-size: 9pt; font-weight: 700; }
-  .company-title { position: absolute; top: 61.2mm; left: 15mm; right: 15mm; text-align: center; font-size: 11.5pt; font-weight: 700; }
-  .certifica { position: absolute; top: 75.4mm; left: 15mm; right: 15mm; text-align: center; font-size: 10.5pt; font-weight: 700; }
-  .content { position: absolute; left: 13.4mm; right: 19.5mm; top: 87.5mm; font-size: 9.1pt; line-height: 1.42; text-align: left; }
+  .page {
+    position: relative;
+    width: 210mm;
+    height: 297mm;
+    overflow: hidden;
+    background: #fff;
+  }
+  .bg {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 210mm;
+    height: 297mm;
+    object-fit: fill;
+    display: block;
+    z-index: 0;
+  }
+  .date {
+    position: absolute;
+    left: 13.4mm;
+    top: 41.2mm;
+    font-size: 9pt;
+    font-weight: 700;
+    z-index: 2;
+  }
+  .company-title {
+    position: absolute;
+    top: 61.2mm;
+    left: 15mm;
+    right: 15mm;
+    text-align: center;
+    font-size: 11.5pt;
+    font-weight: 700;
+    z-index: 2;
+  }
+  .certifica {
+    position: absolute;
+    top: 75.4mm;
+    left: 15mm;
+    right: 15mm;
+    text-align: center;
+    font-size: 10.5pt;
+    font-weight: 700;
+    z-index: 2;
+  }
+  .content {
+    position: absolute;
+    left: 13.4mm;
+    right: 19.5mm;
+    top: 87.5mm;
+    font-size: 9.1pt;
+    line-height: 1.42;
+    text-align: left;
+    z-index: 2;
+  }
   .content p { margin: 0 0 4.1mm 0; }
-  .signature-block { position: absolute; left: 13.4mm; top: 155.7mm; font-size: 9pt; line-height: 1.35; }
+  .signature-block {
+    position: absolute;
+    left: 13.4mm;
+    top: 155.7mm;
+    width: 80mm;
+    font-size: 9pt;
+    line-height: 1.35;
+    z-index: 2;
+  }
   .cordial { margin-bottom: 6.4mm; }
-  .signature { width: 54mm; height: 13mm; object-fit: contain; object-position: left bottom; display: block; margin: 0 0 1.5mm 0; }
+  .signature {
+    width: 54mm;
+    height: 13mm;
+    object-fit: contain;
+    object-position: left bottom;
+    display: block;
+    margin: 0 0 1.5mm 0;
+  }
   .signer-name { font-weight: 700; }
   .email { color: #00e; text-decoration: underline; }
-  .motto { position: absolute; left: 15mm; right: 15mm; top: 216mm; text-align: center; font-size: 10.6pt; font-weight: 700; }
+  .motto {
+    position: absolute;
+    left: 15mm;
+    right: 15mm;
+    top: 216mm;
+    text-align: center;
+    font-size: 10.6pt;
+    font-weight: 700;
+    z-index: 2;
+  }
 </style>
 </head>
 <body>
 <div class="page">
+  <img class="bg" src="${bg}" alt="Membrete VIP Salud Ocupacional">
+
   <div class="date">BOGOTÁ, ${day} DE ${escapeHtml(month)} DEL ${year}</div>
   <div class="company-title">VIP SALUD OCUPACIONAL S.A.S.</div>
   <div class="certifica">CERTIFICA:</div>
+
   <div class="content">
     <p>Que viene realizando los exámenes médicos ocupacionales, acompañamiento en los sistemas de gestión de seguridad y salud en el trabajo y la custodia de las evaluaciones médicas ocupacionales de la empresa: <strong>${escapeHtml(company.nombre)}</strong> Con número de identificación tributaria <strong>No. ${nitWithDv}</strong> se encuentra bajo nuestra responsabilidad y confidencialidad, siguiendo la RE: 1995 de 1999; ya que somos el prestador de servicios de salud ocupacional que las generó en el curso de la atención. Cumpliendo los requisitos y procedimientos de archivo conforme a las normas legales vigentes para el manejo de historias clínicas.</p>
     <p>En constancia se expide en la ciudad de Bogotá D.C. a los ${day} días del mes de ${escapeHtml(month)} del ${year} con destino al interesado.</p>
   </div>
+
   <div class="signature-block">
     <div class="cordial">Cordialmente,</div>
     <img class="signature" src="${signature}" alt="Firma">
@@ -184,6 +272,7 @@ function buildCustodyHtml(company, date = new Date()) {
     <div>Tel. 3134010901</div>
     <div class="email">vipsaludocupacional@gmail.com</div>
   </div>
+
   <div class="motto">“BRINDAMOS PROTECCIÓN Y BIENESTAR”</div>
 </div>
 </body>
@@ -205,8 +294,8 @@ async function renderCustodyPdf(company, date = new Date()) {
   let lastError = null;
 
   // Custodia usa el mismo motor Chrome que ya genera correctamente los
-  // certificados de Manipulación. Así evitamos el parser JPEG de PDFKit,
-  // que rechazaba el membrete en Render con `Invalid JPEG`.
+  // certificados de Manipulación. El membrete y la firma se renderizan como
+  // imágenes HTML para conservar exactamente la composición del prototipo.
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const pdf = await renderHtmlToPdf(html);
