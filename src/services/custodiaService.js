@@ -1,7 +1,7 @@
 "use strict";
 
 const data = require("../data/custodia/clientes");
-const assets = require("../data/custodia/assets");
+const assets = require("../data/custodia/htmlAssets");
 const { renderHtmlToPdf } = require("./browserPdf");
 
 const companies = Array.isArray(data.empresas) ? data.empresas : [];
