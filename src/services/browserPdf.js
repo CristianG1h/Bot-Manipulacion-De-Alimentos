@@ -134,20 +134,24 @@ async function waitForFonts(page) {
   });
 }
 
-async function waitForImages(page) {
-  await page.evaluate(async () => {
+async function waitForImages(page, maxWaitMs = 3000) {
+  await page.evaluate(async (timeoutMs) => {
     const images = Array.from(document.images || []);
-    await Promise.all(
-      images.map((img) => {
-        if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-        return new Promise((resolve) => {
-          const done = () => resolve();
-          img.addEventListener("load", done, { once: true });
-          img.addEventListener("error", done, { once: true });
-        });
-      })
-    );
-  });
+    const waiting = images.map((img) => {
+      if (img.complete) return Promise.resolve();
+
+      return new Promise((resolve) => {
+        const done = () => resolve();
+        img.addEventListener("load", done, { once: true });
+        img.addEventListener("error", done, { once: true });
+      });
+    });
+
+    await Promise.race([
+      Promise.all(waiting),
+      new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  }, Math.max(250, Number(maxWaitMs) || 3000));
 }
 
 async function renderUrlToPdf(url) {
@@ -182,16 +186,21 @@ async function renderUrlToPdf(url) {
 
 async function renderHtmlToPdf(html) {
   return withPage(async (page) => {
+    // Custodia usa un HTML autocontenido: no consulta URLs ni recursos externos.
+    // Esperar networkidle0 podía bloquear el render hasta 30 s en Render.
     await page.setContent(String(html || ""), {
-      waitUntil: "networkidle0",
+      waitUntil: "domcontentloaded",
+      timeout: Number(process.env.PDF_HTML_LOAD_TIMEOUT_MS || 8000),
     });
 
     await page.emulateMediaType("print");
     await waitForFonts(page);
-    await waitForImages(page);
+    await waitForImages(
+      page,
+      Number(process.env.PDF_IMAGE_WAIT_MS || 3000)
+    );
 
     const pdf = await page.pdf({
-      format: "A4",
       printBackground: true,
       preferCSSPageSize: true,
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
