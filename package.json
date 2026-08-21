@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "postinstall": "npx puppeteer browsers install chrome",
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/routes/chatwoot.js && node --check src/services/whatsapp.js && node --check src/services/certificadosBotService.js && node --check src/services/manipulacionCertificateService.js && node --check src/services/custodiaService.js && node --check src/services/browserPdf.js"
+    "check": "node --check src/routes/chatwoot.js && node --check src/services/whatsapp.js && node --check src/services/certificadosBotService.js && node --check src/services/manipulacionCertificateService.js && node --check src/services/custodiaService.js && node --check src/services/biofileCustodiaSync.js && node --check src/services/browserPdf.js && node --check src/server.js"
   },
   "engines": {
     "node": "24.x"
