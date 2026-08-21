@@ -134,6 +134,22 @@ async function waitForFonts(page) {
   });
 }
 
+async function waitForImages(page) {
+  await page.evaluate(async () => {
+    const images = Array.from(document.images || []);
+    await Promise.all(
+      images.map((img) => {
+        if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+        return new Promise((resolve) => {
+          const done = () => resolve();
+          img.addEventListener("load", done, { once: true });
+          img.addEventListener("error", done, { once: true });
+        });
+      })
+    );
+  });
+}
+
 async function renderUrlToPdf(url) {
   return withPage(async (page) => {
     const response = await page.goto(String(url), {
@@ -151,6 +167,7 @@ async function renderUrlToPdf(url) {
 
     await page.emulateMediaType("print");
     await waitForFonts(page);
+    await waitForImages(page);
 
     const pdf = await page.pdf({
       format: "A4",
@@ -171,6 +188,7 @@ async function renderHtmlToPdf(html) {
 
     await page.emulateMediaType("print");
     await waitForFonts(page);
+    await waitForImages(page);
 
     const pdf = await page.pdf({
       format: "A4",
