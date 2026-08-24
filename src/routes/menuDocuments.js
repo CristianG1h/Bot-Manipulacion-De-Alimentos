@@ -1,11 +1,64 @@
 "use strict";
 
 const express = require("express");
+const path = require("path");
+const fs = require("fs/promises");
 const router = express.Router();
 
-const { sendPayload, sendText } = require("../services/whatsapp");
+const {
+  sendPayload,
+  sendText,
+  sendDocumentBuffer,
+} = require("../services/whatsapp");
 
 const WEBHOOK_TOKEN = process.env.CHATWOOT_WEBHOOK_TOKEN;
+const DOCUMENTS_DIR = path.join(__dirname, "../assets/company-documents-live");
+
+const DOCUMENTS = {
+  doc_rut: {
+    fileName: "rut.pdf",
+    caption:
+      "📄 *RUT — VIP SALUD OCUPACIONAL SAS*\n\n" +
+      "NIT: *901434471-7*\n" +
+      "Adjuntamos el Registro Único Tributario (RUT) actualizado de la empresa.",
+  },
+  doc_camara: {
+    fileName: "camara_comercio.pdf",
+    caption:
+      "🏢 *CÁMARA DE COMERCIO*\n\n" +
+      "Adjuntamos el certificado de existencia y representación legal actualizado de *VIP SALUD OCUPACIONAL SAS*.",
+  },
+  doc_habilitacion: {
+    fileName: "habilitacion_reps.pdf",
+    caption:
+      "🏥 *HABILITACIÓN / REPS*\n\n" +
+      "Adjuntamos el documento de habilitación y declaración de autoevaluación de los servicios de salud de *VIP SALUD OCUPACIONAL SAS*.",
+  },
+  doc_licencia_sst: {
+    fileName: "licencia_medico_sst.pdf",
+    caption:
+      "🩺 *LICENCIA MÉDICO SST*\n\n" +
+      "Adjuntamos la licencia para la prestación de servicios en *Seguridad y Salud en el Trabajo*.",
+  },
+  bancolombia: {
+    fileName: "bancolombia.pdf",
+    caption:
+      "🏦 *BANCOLOMBIA*\n\n" +
+      "Titular: *VIP SALUD OCUPACIONAL SAS*\n" +
+      "Tipo de cuenta: *Cuenta de ahorros*\n" +
+      "Número: *21700001442*\n\n" +
+      "Adjuntamos la certificación bancaria correspondiente.",
+  },
+  davivienda: {
+    fileName: "davivienda.pdf",
+    caption:
+      "🏦 *DAVIVIENDA*\n\n" +
+      "Titular: *VIP SALUD OCUPACIONAL SAS*\n" +
+      "Tipo de cuenta: *Cuenta de ahorros*\n" +
+      "Número: *001600128670*\n\n" +
+      "Adjuntamos la certificación bancaria correspondiente.",
+  },
+};
 
 const ROOT_MENU_TEXT =
   "✨ *VIP SALUD OCUPACIONAL*\n\n" +
@@ -254,43 +307,46 @@ async function sendCertificatesMenu(to) {
   });
 }
 
-async function sendDocumentTestingMessage(to, kind) {
-  const messages = {
-    doc_rut:
-      "📄 *RUT — VIP Salud Ocupacional*\n\n" +
-      "El RUT actualizado está asociado a esta opción. En esta primera prueba estamos validando el menú y el flujo de selección.",
-    doc_camara:
-      "🏢 *Cámara de Comercio — VIP Salud Ocupacional*\n\n" +
-      "El certificado actualizado de existencia y representación legal está asociado a esta opción. En esta primera prueba estamos validando el menú y el flujo de selección.",
-    doc_habilitacion:
-      "🏥 *Habilitación / REPS — VIP Salud Ocupacional*\n\n" +
-      "El documento de habilitación está asociado a esta opción. En esta primera prueba estamos validando el menú y el flujo de selección.",
-    doc_licencia_sst:
-      "🩺 *Licencia Médico SST*\n\n" +
-      "La licencia de Seguridad y Salud en el Trabajo está asociada a esta opción. En esta primera prueba estamos validando el menú y el flujo de selección.",
-  };
+async function loadDocument(documentKey) {
+  const config = DOCUMENTS[documentKey];
+  if (!config) throw new Error(`Documento no configurado: ${documentKey}`);
 
-  return sendText(to, messages[kind] || "Documento seleccionado.");
+  const fullPath = path.join(DOCUMENTS_DIR, config.fileName);
+  const buffer = await fs.readFile(fullPath);
+
+  if (!buffer.length) {
+    throw new Error(`El archivo ${config.fileName} está vacío`);
+  }
+
+  return { ...config, buffer };
+}
+
+async function sendConfiguredDocument(to, documentKey) {
+  const config = DOCUMENTS[documentKey];
+
+  try {
+    const document = await loadDocument(documentKey);
+    return await sendDocumentBuffer(to, document.buffer, {
+      fileName: document.fileName,
+      caption: document.caption,
+      mimeType: "application/pdf",
+    });
+  } catch (error) {
+    console.error(`❌ No se pudo enviar ${documentKey}:`, error.message);
+
+    const fileName = config?.fileName || "documento.pdf";
+    return sendText(
+      to,
+      "⚠️ *Documento temporalmente no disponible*\n\n" +
+        `No encontramos el archivo *${fileName}* en el servidor. ` +
+        "Por favor comunícate con un asesor para que te lo envíe directamente."
+    );
+  }
 }
 
 async function sendBankAccounts(to) {
-  await sendText(
-    to,
-    "🏦 *BANCOLOMBIA*\n\n" +
-      "Titular: *VIP SALUD OCUPACIONAL SAS*\n" +
-      "Tipo de cuenta: *Cuenta de ahorros*\n" +
-      "Número: *21700001442*\n\n" +
-      "La certificación bancaria de Bancolombia está asociada a esta opción."
-  );
-
-  return sendText(
-    to,
-    "🏦 *DAVIVIENDA*\n\n" +
-      "Titular: *VIP SALUD OCUPACIONAL SAS*\n" +
-      "Tipo de cuenta: *Cuenta de ahorros*\n" +
-      "Número: *001600128670*\n\n" +
-      "La certificación bancaria de Davivienda está asociada a esta opción."
-  );
+  await sendConfiguredDocument(to, "bancolombia");
+  return sendConfiguredDocument(to, "davivienda");
 }
 
 async function sendCalibrationMaintenance(to) {
@@ -327,11 +383,12 @@ async function handleAction(to, actionId) {
   if (actionId === "menu_manipulacion") return sendManipulationMenu(to);
   if (actionId === "menu_documentos_vip") return sendDocumentsMenu(to);
   if (actionId === "menu_certificados") return sendCertificatesMenu(to);
+  if (actionId === "doc_rut") return sendConfiguredDocument(to, "doc_rut");
+  if (actionId === "doc_camara") return sendConfiguredDocument(to, "doc_camara");
+  if (actionId === "doc_habilitacion") return sendConfiguredDocument(to, "doc_habilitacion");
+  if (actionId === "doc_licencia_sst") return sendConfiguredDocument(to, "doc_licencia_sst");
   if (actionId === "doc_bancos") return sendBankAccounts(to);
   if (actionId === "doc_calibracion") return sendCalibrationMaintenance(to);
-  if (["doc_rut", "doc_camara", "doc_habilitacion", "doc_licencia_sst"].includes(actionId)) {
-    return sendDocumentTestingMessage(to, actionId);
-  }
 
   return null;
 }
