@@ -216,21 +216,22 @@ async function sendDocumentsMenu(to) {
       type: "list",
       header: {
         type: "text",
-        text: "📁 DOCUMENTOS VIP",
+        text: "VIP SALUD OCUPACIONAL",
       },
       body: {
         text:
-          "📁 *DOCUMENTOS VIP SALUD OCUPACIONAL*\n\n" +
-          "Selecciona el documento que deseas recibir:",
+          "📁 *Documentos empresariales*\n\n" +
+          "Consulta y recibe directamente los documentos corporativos de la IPS.\n\n" +
+          "Selecciona una opción:",
       },
       footer: {
-        text: "VIP Salud Ocupacional",
+        text: "Documentación corporativa",
       },
       action: {
-        button: "Ver documentos",
+        button: "Elegir documento",
         sections: [
           {
-            title: "Documentos de la IPS",
+            title: "Documentos disponibles",
             rows: [
               {
                 id: "doc_rut",
