@@ -222,10 +222,14 @@ function buildCustodyHtml(company, date = new Date()) {
     top: 28.4%;
     font-size: 10.2pt;
     line-height: 1.38;
-    text-align: left;
+    text-align: justify;
+    text-justify: inter-word;
+    hyphens: auto;
   }
   .body-copy p {
     margin: 0 0 10px;
+    text-align: justify;
+    text-align-last: left;
   }
   .dynamic {
     font-weight: 700;
