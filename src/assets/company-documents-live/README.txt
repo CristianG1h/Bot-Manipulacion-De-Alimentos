@@ -1,0 +1,1 @@
+Documentos corporativos para pruebas del menú Documentos VIP. Los PDF reales se cargan mediante un bundle binario y se reconstruyen en memoria al enviar por WhatsApp.
