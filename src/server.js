@@ -5,6 +5,7 @@ const path = require("path");
 
 const notifyRouter = require("./routes/notify");
 const certificateRouter = require("./routes/certificate");
+const menuDocumentsRouter = require("./routes/menuDocuments");
 const chatwootRouter = require("./routes/chatwoot");
 const adminCertificadosRouter = require("./routes/adminCertificados");
 const Stats = require("./services/stats");
@@ -165,12 +166,8 @@ function protegerDashboard(req, res, next) {
   return next();
 }
 
-// Archivos del dashboard protegidos
 app.use("/public", protegerDashboard, express.static(publicPath));
 
-// Misma URL principal:
-// - WhatsApp/Facebook/Twitter reciben preview público
-// - Usuarios normales reciben dashboard protegido
 app.get("/", (req, res, next) => {
   if (isPreviewBot(req)) {
     return res.status(200).type("html").send(renderPreviewHtml());
@@ -181,12 +178,10 @@ app.get("/", (req, res, next) => {
   res.sendFile(dashboardPath);
 });
 
-// Dashboard protegido
 app.get("/dashboard", protegerDashboard, (req, res) => {
   res.sendFile(dashboardPath);
 });
 
-// API protegida
 app.get("/api/stats", protegerDashboard, async (req, res) => {
   try {
     const data = await Stats.getSnapshot(req.query || {});
@@ -200,15 +195,12 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
   }
 });
 
-// API certificados admin protegida
 app.use("/api/admin-certificados", protegerDashboard, adminCertificadosRouter);
 
-// Estado de la sincronización de empresas de Custodia Clínica con BIOFILE.
 app.get("/api/custodia-sync-status", protegerDashboard, (_req, res) => {
   return res.json(getCustodiaSyncStatus());
 });
 
-// Permite verificar o forzar una actualización sin esperar las próximas 24 h.
 app.post("/api/custodia-sync-now", protegerDashboard, async (_req, res) => {
   try {
     const result = await syncCustodiaCompanies({ reason: "manual-api" });
@@ -222,19 +214,19 @@ app.post("/api/custodia-sync-now", protegerDashboard, async (_req, res) => {
   }
 });
 
-// Healthcheck público para Render/UptimeRobot
 app.get("/health", (req, res) => {
   res.status(200).send("OK TODO FUNCIONANDO PERRO");
 });
 
-// Chatwoot público porque Chatwoot debe llamar este endpoint
+// El router nuevo intercepta únicamente el menú principal, la bandeja de
+// Documentos VIP y sus opciones. Todo lo demás continúa al flujo existente
+// de Manipulación, Custodia, asesor y certificados.
+app.use("/chatwoot", menuDocumentsRouter);
 app.use("/chatwoot", chatwootRouter);
 
-// Notificaciones protegidas por x-api-key
 app.use("/notify", notifyRouter);
 app.use("/api/notify", notifyRouter);
 
-// Certificados protegidos por x-api-key
 app.use("/certificate", certificateRouter);
 app.use("/notify/certificate", certificateRouter);
 
@@ -246,10 +238,8 @@ app.listen(PORT, () => {
   console.log(`🖼️ Preview público para bots en /`);
   console.log(`🔎 API stats con filtros activa en /api/stats`);
   console.log(`💬 Chatwoot webhook activo en /chatwoot/webhook`);
+  console.log(`📁 Menú y documentos VIP activos antes del flujo legado`);
   console.log(`📁 Dashboard path: ${dashboardPath}`);
 
-  // Render permanece encendido: se consulta BIOFILE al iniciar y luego cada 24 h.
-  // Si la consulta falla, el catálogo embebido continúa disponible y se reintenta
-  // en la siguiente ejecución o mediante /api/custodia-sync-now.
   startCustodiaBiofileSync();
 });
