@@ -30,19 +30,22 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Sincronizar package-lock
+      - name: Sincronizar dependencias
         run: npm install --package-lock-only --ignore-scripts
 
-      - name: Guardar package-lock sincronizado
+      - name: Aplicar correcciones de seguridad compatibles
+        run: npm audit fix --package-lock-only --ignore-scripts || true
+
+      - name: Guardar dependencias corregidas
         if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
+          git add package.json package-lock.json
           if git diff --cached --quiet; then
-            echo "package-lock.json ya está sincronizado"
+            echo "Dependencias ya sincronizadas y corregidas"
           else
-            git commit -m "chore: sincronizar package-lock"
+            git commit -m "security: actualizar dependencias vulnerables"
             git push
           fi
 
