@@ -33,46 +33,19 @@ jobs:
           ruta = Path("src/routes/adminCertificados.js")
           texto = ruta.read_text(encoding="utf-8")
 
-          anterior = '''  const filtroFacturado = obtenerFiltroFacturado(query.facturado);
-          const rango = obtenerRangoFecha(query);
+          if "const todasLasEmpresas = empresasSolicitadas.some" not in texto:
+              ancla = '''  const filtroFacturado = obtenerFiltroFacturado(query.facturado);\n  const rango = obtenerRangoFecha(query);\n\n  if (!empresasSolicitadas.length) return [];'''
+              reemplazo = '''  const filtroFacturado = obtenerFiltroFacturado(query.facturado);\n  const rango = obtenerRangoFecha(query);\n  const todasLasEmpresas = empresasSolicitadas.some((empresa) =>\n    ["todos", "todas", "all"].includes(empresa)\n  );\n\n  if (!empresasSolicitadas.length) return [];'''
+              if ancla not in texto:
+                  raise SystemExit("No se encontró el ancla de filtros")
+              texto = texto.replace(ancla, reemplazo, 1)
 
-          if (!empresasSolicitadas.length) return [];
-
-          return (usuarios || []).filter((usuario) => {
-            if (esAdminEmpresa(usuario)) return false;
-
-            const empresa = normalizarTexto(usuario.empresa);
-            const coincideEmpresa = empresasSolicitadas.some((busqueda) =>
-              empresa.includes(busqueda)
-            );
-
-            if (!coincideEmpresa || !cumpleRangoFecha(usuario, rango)) return false;
-          '''
-
-          nuevo = '''  const filtroFacturado = obtenerFiltroFacturado(query.facturado);
-          const rango = obtenerRangoFecha(query);
-          const todasLasEmpresas = empresasSolicitadas.some((empresa) =>
-            ["todos", "todas", "all"].includes(empresa)
-          );
-
-          if (!empresasSolicitadas.length) return [];
-
-          return (usuarios || []).filter((usuario) => {
-            if (esAdminEmpresa(usuario)) return false;
-
-            const empresa = normalizarTexto(usuario.empresa);
-            const coincideEmpresa = todasLasEmpresas
-              ? Boolean(empresa)
-              : empresasSolicitadas.some((busqueda) => empresa.includes(busqueda));
-
-            if (!coincideEmpresa || !cumpleRangoFecha(usuario, rango)) return false;
-          '''
-
-          if anterior in texto:
-              texto = texto.replace(anterior, nuevo, 1)
+              ancla_empresa = '''    const empresa = normalizarTexto(usuario.empresa);\n    const coincideEmpresa = empresasSolicitadas.some((busqueda) =>\n      empresa.includes(busqueda)\n    );'''
+              reemplazo_empresa = '''    const empresa = normalizarTexto(usuario.empresa);\n    const coincideEmpresa = todasLasEmpresas\n      ? Boolean(empresa)\n      : empresasSolicitadas.some((busqueda) => empresa.includes(busqueda));'''
+              if ancla_empresa not in texto:
+                  raise SystemExit("No se encontró el bloque de coincidencia de empresa")
+              texto = texto.replace(ancla_empresa, reemplazo_empresa, 1)
               ruta.write_text(texto, encoding="utf-8")
-          elif "const todasLasEmpresas = empresasSolicitadas.some" not in texto:
-              raise SystemExit("No se encontró el bloque esperado de filtrarUsuarios")
 
           pruebas = Path("tests/admin-facturacion.test.js")
           contenido = pruebas.read_text(encoding="utf-8")
