@@ -8,6 +8,7 @@ const certificateRouter = require("./routes/certificate");
 const menuDocumentsRouter = require("./routes/menuDocuments");
 const chatwootRouter = require("./routes/chatwoot");
 const adminCertificadosRouter = require("./routes/adminCertificados");
+const adminFacturacionRouter = require("./routes/adminFacturacion");
 const Stats = require("./services/stats");
 const {
   startCustodiaBiofileSync,
@@ -196,6 +197,7 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 });
 
 app.use("/api/admin-certificados", protegerDashboard, adminCertificadosRouter);
+app.use("/api/admin-facturacion", protegerDashboard, adminFacturacionRouter);
 
 app.get("/api/custodia-sync-status", protegerDashboard, (_req, res) => {
   return res.json(getCustodiaSyncStatus());
@@ -237,6 +239,7 @@ app.listen(PORT, () => {
   console.log(`📊 Dashboard protegido en / y /dashboard`);
   console.log(`🖼️ Preview público para bots en /`);
   console.log(`🔎 API stats con filtros activa en /api/stats`);
+  console.log(`🧾 API facturación multiempresa activa en /api/admin-facturacion/empresas`);
   console.log(`💬 Chatwoot webhook activo en /chatwoot/webhook`);
   console.log(`📁 Menú y documentos VIP activos antes del flujo legado`);
   console.log(`📁 Dashboard path: ${dashboardPath}`);
