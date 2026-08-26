@@ -17,7 +17,6 @@ jobs:
     timeout-minutes: 20
     env:
       PUPPETEER_SKIP_DOWNLOAD: "true"
-      PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
 
     steps:
       - name: Checkout
@@ -35,6 +34,24 @@ jobs:
       - name: Instalar dependencias sin postinstall
         run: npm install --ignore-scripts
 
+      - name: Aplicar correcciones de seguridad compatibles
+        run: npm audit fix --ignore-scripts
+
+      - name: Verificar vulnerabilidades altas
+        run: npm audit --audit-level=high
+
+      - name: Resolver Chrome del runner
+        shell: bash
+        run: |
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME" ]; then
+            unset PUPPETEER_SKIP_DOWNLOAD
+            npx puppeteer browsers install chrome
+            CHROME="$(node -e "console.log(require('puppeteer').executablePath())")"
+          fi
+          echo "PUPPETEER_EXECUTABLE_PATH=$CHROME" >> "$GITHUB_ENV"
+          "$CHROME" --version
+
       - name: Validar sintaxis
         run: npm run check
 
@@ -50,7 +67,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "package-lock.json ya está sincronizado"
           else
-            git commit -m "chore: sincronizar package-lock"
+            git commit -m "chore: sincronizar package-lock y parches de seguridad"
             git push
           fi
 
