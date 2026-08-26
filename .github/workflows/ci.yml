@@ -35,8 +35,8 @@ jobs:
       - name: Sincronizar package-lock
         run: npm install --package-lock-only --ignore-scripts
 
-      - name: Guardar package-lock sincronizado en la rama
-        if: github.event_name == 'push' && github.ref == 'refs/heads/audit/cleanup-dashboard-20260826'
+      - name: Guardar package-lock sincronizado
+        if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
