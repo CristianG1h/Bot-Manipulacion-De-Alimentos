@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - audit/cleanup-dashboard-20260826
+    branches: [main]
   pull_request:
     branches: [main]
 
