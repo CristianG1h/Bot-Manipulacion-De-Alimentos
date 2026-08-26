@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "postinstall": "npx puppeteer browsers install chrome",
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/routes/chatwoot.js && node --check src/routes/adminFacturacion.js && node --check src/public/js/dashboard-empresa-facturacion.js && node --check src/public/js/dashboard-facturacion-metricas.js && node --check src/services/whatsapp.js && node --check src/services/certificadosBotService.js && node --check src/services/manipulacionCertificateService.js && node --check src/services/custodiaService.js && node --check src/services/biofileCustodiaSync.js && node --check src/services/browserPdf.js && node --check src/server.js"
+    "check": "node --check src/server.js && node --check src/routes/chatwoot.js && node --check src/routes/menuDocuments.js && node --check src/routes/notify.js && node --check src/routes/certificate.js && node --check src/routes/adminCertificados.js && node --check src/public/js/dashboard.js && node --check src/public/js/dashboard-empresa-facturacion.js && node --check src/public/js/dashboard-facturacion-metricas.js && node --check src/services/whatsapp.js && node --check src/services/stats.js && node --check src/services/certificadosBotService.js && node --check src/services/certificadosNameCache.js && node --check src/services/manipulacionCertificateService.js && node --check src/services/custodiaService.js && node --check src/services/biofileCustodiaSync.js && node --check src/services/browserPdf.js"
   },
   "engines": {
     "node": "24.x"
