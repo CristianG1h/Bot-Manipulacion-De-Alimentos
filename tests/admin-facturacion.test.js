@@ -98,6 +98,32 @@ test("filtra no facturados de varias empresas y excluye administradores NIT", ()
   );
 });
 
+test("TODOS consulta todas las empresas y conserva los filtros", () => {
+  const users = extraerUsuariosDesdeHtml(htmlPanelActual);
+
+  const todos = filtrarUsuarios(users, {
+    q: "TODOS",
+    facturado: "all",
+    range: "all",
+  });
+
+  assert.deepEqual(
+    todos.map((u) => u.documento),
+    ["100000001", "100000002", "100000003"]
+  );
+
+  const noFacturados = filtrarUsuarios(users, {
+    q: "TODOS",
+    facturado: "no",
+    range: "all",
+  });
+
+  assert.deepEqual(
+    noFacturados.map((u) => u.documento),
+    ["100000001", "100000002"]
+  );
+});
+
 test("interpreta correctamente los filtros Sí, No y Todo", () => {
   assert.equal(obtenerFiltroFacturado("Sí"), true);
   assert.equal(obtenerFiltroFacturado("No"), false);
