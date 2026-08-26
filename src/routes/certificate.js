@@ -34,17 +34,13 @@ router.post("/", requireApiKey, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing name/certificate_url" });
     }
 
-    const norm =
-      String(to).startsWith("57") || String(to).startsWith("+57")
-        ? { e164: String(to).startsWith("+") ? String(to) : `+${String(to)}` }
-        : normalizeCOCell(String(to));
+    const norm = normalizeCOCell(String(to));
 
     if (!norm?.e164) {
       return res.status(400).json({ ok: false, error: "Invalid phone number" });
     }
 
     const waTo = norm.e164.replace("+", "");
-
     const TEMPLATE_NAME = "certificado_aprobado_v1";
     const LANG = "es_CO";
 
@@ -78,11 +74,10 @@ router.post("/", requireApiKey, async (req, res) => {
     }
 
     Stats.certificadoEnviado(String(name));
-
     return res.json({ ok: true });
-  } catch (e) {
-    console.error("❌ certificate route error:", e);
-    Stats.metaError(`certificate route error: ${e.message}`);
+  } catch (error) {
+    console.error("❌ certificate route error:", error.message);
+    Stats.metaError(`certificate route error: ${error.message}`);
     return res.status(500).json({ ok: false, error: "Internal error" });
   }
 });
