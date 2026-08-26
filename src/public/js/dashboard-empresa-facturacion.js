@@ -10,11 +10,14 @@
     return;
   }
 
-  // Ajuste de columnas para el nuevo filtro sin tocar el diseño responsive.
   const style = document.createElement("style");
   style.textContent = `
     @media (min-width: 1001px) {
       .filter-grid {
+        grid-template-columns: 1.45fr .72fr .72fr .72fr .72fr auto auto;
+      }
+
+      .filter-grid.empresa-mode {
         grid-template-columns: 1.45fr .72fr .58fr .72fr .72fr .72fr auto auto;
       }
     }
@@ -52,7 +55,7 @@
 
   if (!facturadoSelect) {
     const field = document.createElement("div");
-    field.className = "field";
+    field.className = "field hidden";
     field.id = "facturadoField";
 
     const label = document.createElement("label");
@@ -80,10 +83,14 @@
     searchModeField?.insertAdjacentElement("afterend", field);
   }
 
+  const facturadoField = document.getElementById("facturadoField");
   const qFieldLabel = qInput.closest(".field")?.querySelector("label");
 
   function actualizarModoVisual() {
     const esEmpresa = searchMode.value === "empresa";
+
+    grid.classList.toggle("empresa-mode", esEmpresa);
+    facturadoField?.classList.toggle("hidden", !esEmpresa);
 
     if (qFieldLabel) {
       qFieldLabel.textContent = esEmpresa
@@ -94,8 +101,6 @@
     qInput.placeholder = esEmpresa
       ? "Ej: LIVING NATURAL, TEMPORARY PROFESSIONAL SERVICES SAS"
       : "Ej: 573212340504, certificado, asesor, link...";
-
-    facturadoSelect.disabled = !esEmpresa;
 
     if (!esEmpresa) {
       facturadoSelect.value = "all";
@@ -186,7 +191,7 @@
         if (to) params.set("to", to);
       }
 
-      const res = await fetch(`/api/admin-facturacion/empresas?${params.toString()}`, {
+      const res = await fetch(`/api/admin-certificados/empresa?${params.toString()}`, {
         cache: "no-store",
       });
 

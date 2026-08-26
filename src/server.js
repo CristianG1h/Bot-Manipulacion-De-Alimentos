@@ -8,7 +8,6 @@ const certificateRouter = require("./routes/certificate");
 const menuDocumentsRouter = require("./routes/menuDocuments");
 const chatwootRouter = require("./routes/chatwoot");
 const adminCertificadosRouter = require("./routes/adminCertificados");
-const adminFacturacionRouter = require("./routes/adminFacturacion");
 const Stats = require("./services/stats");
 const {
   startCustodiaBiofileSync,
@@ -18,6 +17,13 @@ const {
 
 const app = express();
 
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
 app.use(express.json({ limit: "2mb" }));
 
 const dashboardPath = path.join(__dirname, "public", "dashboard.html");
@@ -50,12 +56,9 @@ function renderPreviewHtml() {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <title>${PREVIEW_TITLE}</title>
-
   <link rel="icon" type="image/png" href="${PREVIEW_IMAGE}" />
   <link rel="apple-touch-icon" href="${PREVIEW_IMAGE}" />
-
   <meta property="og:locale" content="es_CO" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Vip Salud Ocupacional" />
@@ -65,12 +68,10 @@ function renderPreviewHtml() {
   <meta property="og:image" content="${PREVIEW_IMAGE}" />
   <meta property="og:image:secure_url" content="${PREVIEW_IMAGE}" />
   <meta property="og:image:type" content="image/png" />
-
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${PREVIEW_TITLE}" />
   <meta name="twitter:description" content="${PREVIEW_DESCRIPTION}" />
   <meta name="twitter:image" content="${PREVIEW_IMAGE}" />
-
   <style>
     body {
       margin: 0;
@@ -82,7 +83,6 @@ function renderPreviewHtml() {
       place-items: center;
       padding: 24px;
     }
-
     .card {
       max-width: 620px;
       text-align: center;
@@ -92,26 +92,22 @@ function renderPreviewHtml() {
       padding: 34px;
       box-shadow: 0 30px 80px rgba(0,0,0,.28);
     }
-
     img {
       width: 82px;
       height: 82px;
       object-fit: contain;
       margin-bottom: 18px;
     }
-
     h1 {
       margin: 0;
       font-size: 34px;
       line-height: 1.1;
     }
-
     p {
       color: #9db7d8;
       font-size: 17px;
       line-height: 1.6;
     }
-
     .note {
       margin-top: 18px;
       color: #10b981;
@@ -119,7 +115,6 @@ function renderPreviewHtml() {
     }
   </style>
 </head>
-
 <body>
   <main class="card">
     <img src="${PREVIEW_IMAGE}" alt="Vip Salud Ocupacional" />
@@ -132,10 +127,10 @@ function renderPreviewHtml() {
 }
 
 function protegerDashboard(req, res, next) {
-  const DASHBOARD_USER = process.env.DASHBOARD_USER;
-  const DASHBOARD_PASS = process.env.DASHBOARD_PASS;
+  const dashboardUser = process.env.DASHBOARD_USER;
+  const dashboardPass = process.env.DASHBOARD_PASS;
 
-  if (!DASHBOARD_USER || !DASHBOARD_PASS) {
+  if (!dashboardUser || !dashboardPass) {
     console.warn("⚠️ DASHBOARD_USER o DASHBOARD_PASS no configurados");
     return res.status(503).send("Dashboard no configurado");
   }
@@ -147,10 +142,15 @@ function protegerDashboard(req, res, next) {
     return res.status(401).send("Autenticación requerida");
   }
 
-  const base64Credentials = auth.split(" ")[1];
-  const credentials = Buffer.from(base64Credentials, "base64").toString("utf8");
-  const separatorIndex = credentials.indexOf(":");
+  let credentials = "";
+  try {
+    credentials = Buffer.from(auth.slice(6), "base64").toString("utf8");
+  } catch {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Dashboard VIP"');
+    return res.status(401).send("Autenticación inválida");
+  }
 
+  const separatorIndex = credentials.indexOf(":");
   if (separatorIndex === -1) {
     res.setHeader("WWW-Authenticate", 'Basic realm="Dashboard VIP"');
     return res.status(401).send("Autenticación inválida");
@@ -159,7 +159,7 @@ function protegerDashboard(req, res, next) {
   const user = credentials.slice(0, separatorIndex);
   const pass = credentials.slice(separatorIndex + 1);
 
-  if (user !== DASHBOARD_USER || pass !== DASHBOARD_PASS) {
+  if (user !== dashboardUser || pass !== dashboardPass) {
     res.setHeader("WWW-Authenticate", 'Basic realm="Dashboard VIP"');
     return res.status(401).send("Usuario o contraseña incorrectos");
   }
@@ -169,17 +169,18 @@ function protegerDashboard(req, res, next) {
 
 app.use("/public", protegerDashboard, express.static(publicPath));
 
-app.get("/", (req, res, next) => {
-  if (isPreviewBot(req)) {
-    return res.status(200).type("html").send(renderPreviewHtml());
-  }
+app.get(
+  "/",
+  (req, res, next) => {
+    if (isPreviewBot(req)) {
+      return res.status(200).type("html").send(renderPreviewHtml());
+    }
+    return protegerDashboard(req, res, next);
+  },
+  (_req, res) => res.sendFile(dashboardPath)
+);
 
-  return protegerDashboard(req, res, next);
-}, (req, res) => {
-  res.sendFile(dashboardPath);
-});
-
-app.get("/dashboard", protegerDashboard, (req, res) => {
+app.get("/dashboard", protegerDashboard, (_req, res) => {
   res.sendFile(dashboardPath);
 });
 
@@ -188,7 +189,7 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
     const data = await Stats.getSnapshot(req.query || {});
     return res.json(data);
   } catch (error) {
-    console.error("❌ Error en /api/stats:", error);
+    console.error("❌ Error en /api/stats:", error.message);
     return res.status(500).json({
       ok: false,
       error: "Error cargando estadísticas",
@@ -197,7 +198,6 @@ app.get("/api/stats", protegerDashboard, async (req, res) => {
 });
 
 app.use("/api/admin-certificados", protegerDashboard, adminCertificadosRouter);
-app.use("/api/admin-facturacion", protegerDashboard, adminFacturacionRouter);
 
 app.get("/api/custodia-sync-status", protegerDashboard, (_req, res) => {
   return res.json(getCustodiaSyncStatus());
@@ -210,25 +210,26 @@ app.post("/api/custodia-sync-now", protegerDashboard, async (_req, res) => {
   } catch (error) {
     return res.status(502).json({
       ok: false,
-      error: error.message,
+      error: "No se pudo sincronizar el catálogo de custodia.",
       status: getCustodiaSyncStatus(),
     });
   }
 });
 
-app.get("/health", (req, res) => {
-  res.status(200).send("OK TODO FUNCIONANDO PERRO");
+app.get("/health", (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: "bot-manipulacion-de-alimentos",
+  });
 });
 
-// El router nuevo intercepta únicamente el menú principal, la bandeja de
-// Documentos VIP y sus opciones. Todo lo demás continúa al flujo existente
-// de Manipulación, Custodia, asesor y certificados.
+// Documentos VIP intercepta únicamente sus opciones. El flujo general sigue
+// después en chatwootRouter para Manipulación, Custodia, asesor y certificados.
 app.use("/chatwoot", menuDocumentsRouter);
 app.use("/chatwoot", chatwootRouter);
 
 app.use("/notify", notifyRouter);
 app.use("/api/notify", notifyRouter);
-
 app.use("/certificate", certificateRouter);
 app.use("/notify/certificate", certificateRouter);
 
@@ -236,12 +237,12 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`✅ Servidor activo en puerto ${PORT}`);
-  console.log(`📊 Dashboard protegido en / y /dashboard`);
-  console.log(`🖼️ Preview público para bots en /`);
-  console.log(`🔎 API stats con filtros activa en /api/stats`);
-  console.log(`🧾 API facturación multiempresa activa en /api/admin-facturacion/empresas`);
-  console.log(`💬 Chatwoot webhook activo en /chatwoot/webhook`);
-  console.log(`📁 Menú y documentos VIP activos antes del flujo legado`);
+  console.log("📊 Dashboard protegido en / y /dashboard");
+  console.log("🖼️ Preview público para bots en /");
+  console.log("🔎 API stats con filtros activa en /api/stats");
+  console.log("🧾 Certificados/facturación consolidados en /api/admin-certificados");
+  console.log("💬 Chatwoot webhook activo en /chatwoot/webhook");
+  console.log("📁 Menú y documentos VIP activos antes del flujo general");
   console.log(`📁 Dashboard path: ${dashboardPath}`);
 
   startCustodiaBiofileSync();

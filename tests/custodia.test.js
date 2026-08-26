@@ -1,6 +1,6 @@
 "use strict";
 
-const test = require("node:test");
+const { test, after } = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
@@ -11,6 +11,11 @@ const {
   buildCustodyHtml,
   renderCustodyPdf,
 } = require("../src/services/custodiaService");
+const { shutdownBrowser } = require("../src/services/browserPdf");
+
+after(async () => {
+  await shutdownBrowser();
+});
 
 test("normaliza NIT con puntos, espacios y guiones", () => {
   assert.equal(normalizeDigits("860.501.595 - 0"), "8605015950");
@@ -37,10 +42,12 @@ test("fecha se calcula en America/Bogota", () => {
 test("HTML de custodia contiene razón social, NIT-DV y ambas fechas", () => {
   const company = findByNit("860501595")[0];
   const html = buildCustodyHtml(company, new Date("2026-08-20T16:30:00Z"));
-  assert.match(html, /BOGOTÁ, 20 DE AGOSTO DEL 2026/);
-  assert.match(html, /BIOQUIMICOS COLOMBIANOS LTDA BIOCOL LTDA/);
-  assert.match(html, /No\. 860501595 - 0/);
-  assert.match(html, /a los 20 días del mes de AGOSTO del 2026/);
+  const texto = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+  assert.match(texto, /BOGOTÁ, 20 DE AGOSTO DEL 2026/);
+  assert.match(texto, /BIOQUIMICOS COLOMBIANOS LTDA BIOCOL LTDA/);
+  assert.match(texto, /No\. 860501595 [–-] 0/);
+  assert.match(texto, /a los 20 días del mes de AGOSTO del 2026/);
 });
 
 test("custodia genera un PDF real con el motor Chrome compartido", async () => {

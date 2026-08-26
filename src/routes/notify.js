@@ -76,9 +76,7 @@ async function buscarContactoChatwoot(phoneE164) {
   const phone = String(phoneE164 || "").trim();
   const sinMas = phone.replace("+", "");
 
-  const queries = [phone, sinMas];
-
-  for (const query of queries) {
+  for (const query of [phone, sinMas]) {
     const response = await chatwootRequest(
       `/api/v1/accounts/${cfg.accountId}/contacts/search?q=${encodeURIComponent(query)}`
     );
@@ -141,9 +139,8 @@ async function crearContactoChatwoot(phoneE164, name) {
     return extraerContactId(response);
   } catch (error) {
     if (String(error.message).includes("Phone number has already been taken")) {
-      return await buscarContactoChatwoot(phoneE164);
+      return buscarContactoChatwoot(phoneE164);
     }
-
     throw error;
   }
 }
@@ -151,8 +148,7 @@ async function crearContactoChatwoot(phoneE164, name) {
 async function obtenerOCrearContactoChatwoot(phoneE164, name) {
   const existente = await buscarContactoChatwoot(phoneE164);
   if (existente) return existente;
-
-  return await crearContactoChatwoot(phoneE164, name);
+  return crearContactoChatwoot(phoneE164, name);
 }
 
 async function buscarConversacionChatwoot(contactId) {
@@ -168,12 +164,12 @@ async function buscarConversacionChatwoot(contactId) {
       ? response
       : [];
 
-  const mismaBandeja = conversations.filter((c) => {
+  const mismaBandeja = conversations.filter((conversation) => {
     const inboxId =
-      c.inbox_id ||
-      c.inbox?.id ||
-      c.meta?.inbox?.id ||
-      c.additional_attributes?.inbox_id ||
+      conversation.inbox_id ||
+      conversation.inbox?.id ||
+      conversation.meta?.inbox?.id ||
+      conversation.additional_attributes?.inbox_id ||
       null;
 
     return Number(inboxId) === Number(cfg.inboxId);
@@ -182,7 +178,7 @@ async function buscarConversacionChatwoot(contactId) {
   if (!mismaBandeja.length) return null;
 
   const abierta =
-    mismaBandeja.find((c) => c.status === "open") ||
+    mismaBandeja.find((conversation) => conversation.status === "open") ||
     mismaBandeja[0];
 
   return abierta?.id || null;
@@ -226,43 +222,28 @@ async function obtenerOCrearConversacionChatwoot(phoneE164, name) {
   const existente = await buscarConversacionChatwoot(contactId);
   if (existente) return existente;
 
-  return await crearConversacionChatwoot(phoneE164, contactId);
+  return crearConversacionChatwoot(phoneE164, contactId);
 }
 
-async function crearNotaAccesoCurso({
-  phoneE164,
-  name,
-}) {
+async function crearNotaAccesoCurso({ phoneE164, name }) {
   if (!chatwootActivo()) {
-    console.log(
-      "⚠️ Chatwoot no configurado para nota privada de acceso"
-    );
-
+    console.log("⚠️ Chatwoot no configurado para nota privada de acceso");
     return;
   }
 
-
   try {
     const cfg = chatwootConfig();
-
-    const conversationId =
-      await obtenerOCrearConversacionChatwoot(
-        phoneE164,
-        name
-      );
-
+    const conversationId = await obtenerOCrearConversacionChatwoot(
+      phoneE164,
+      name
+    );
 
     if (!conversationId) {
-      console.log(
-        "⚠️ No se pudo crear/encontrar conversación en Chatwoot"
-      );
-
+      console.log("⚠️ No se pudo crear/encontrar conversación en Chatwoot");
       return;
     }
 
-
-    const contenido =
-      `✅ *Acceso a plataforma enviado automáticamente*
+    const contenido = `✅ *Acceso a plataforma enviado automáticamente*
 
 👤 Nombre: ${name}
 
@@ -272,12 +253,10 @@ async function crearNotaAccesoCurso({
 
 🔐 Las credenciales fueron enviadas directamente al usuario por WhatsApp y no se almacenan en esta nota.`;
 
-
     await chatwootRequest(
       `/api/v1/accounts/${cfg.accountId}/conversations/${conversationId}/messages`,
       {
         method: "POST",
-
         body: {
           content: contenido,
           message_type: "outgoing",
@@ -286,15 +265,9 @@ async function crearNotaAccesoCurso({
       }
     );
 
-
-    console.log(
-      "📝 Nota privada de acceso creada en Chatwoot"
-    );
+    console.log("📝 Nota privada de acceso creada en Chatwoot");
   } catch (error) {
-    console.error(
-      "⚠️ Error creando nota privada de acceso:",
-      error.message
-    );
+    console.error("⚠️ Error creando nota privada de acceso:", error.message);
   }
 }
 
@@ -324,17 +297,13 @@ router.post("/access", requireApiKey, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing name/user/password" });
     }
 
-    const norm =
-      String(to).startsWith("57") || String(to).startsWith("+57")
-        ? { e164: String(to).startsWith("+") ? String(to) : `+${String(to)}` }
-        : normalizeCOCell(String(to));
+    const norm = normalizeCOCell(String(to));
 
     if (!norm?.e164) {
       return res.status(400).json({ ok: false, error: "Invalid phone number" });
     }
 
     const waTo = norm.e164.replace("+", "");
-
     const TEMPLATE_NAME = "acceso_curso1";
     const LANG = "es_CO";
 
@@ -368,20 +337,17 @@ router.post("/access", requireApiKey, async (req, res) => {
       });
     }
 
-    Stats.accesoEnviado(
-    String(name),
-    waTo
-    );
+    Stats.accesoEnviado(String(name), waTo);
 
     await crearNotaAccesoCurso({
-  phoneE164: norm.e164,
-  name: String(name),
-});
+      phoneE164: norm.e164,
+      name: String(name),
+    });
 
     return res.json({ ok: true });
-  } catch (e) {
-    console.error("❌ notify/access error:", e);
-    Stats.metaError(`notify/access error: ${e.message}`);
+  } catch (error) {
+    console.error("❌ notify/access error:", error.message);
+    Stats.metaError(`notify/access error: ${error.message}`);
     return res.status(500).json({ ok: false, error: "Internal error" });
   }
 });

@@ -1,3 +1,5 @@
+"use strict";
+
 const express = require("express");
 const axios = require("axios");
 const cheerio = require("cheerio");
@@ -11,37 +13,57 @@ const {
 
 const router = express.Router();
 
-const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL;
+const ADMIN_BASE_URL = String(process.env.ADMIN_BASE_URL || "").replace(/\/+$/, "");
 const ADMIN_LOGIN_PATH = process.env.ADMIN_LOGIN_PATH || "/login";
 const ADMIN_PANEL_PATH = process.env.ADMIN_PANEL_PATH || "/admin";
-
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-
 const ADMIN_USER_FIELD = process.env.ADMIN_USER_FIELD || "username";
 const ADMIN_PASS_FIELD = process.env.ADMIN_PASS_FIELD || "password";
 
-// ─────────────────────────────────────────────
-// CACHÉ DEL PANEL ADMINISTRATIVO
-// ─────────────────────────────────────────────
+const PANEL_CACHE_TTL_MS = 5 * 60 * 1000;
+const NOMBRE_CONCURRENCIA = 4;
 
-// Tiempo de vida de la caché: 5 minutos.
-const PANEL_CACHE_TTL_MS =
-  5 * 60 * 1000;
-
-
-// Datos almacenados en memoria.
 let panelCache = {
   usuarios: [],
   metricas: null,
   actualizadoEn: 0,
 };
 
-
-// Promise compartida para impedir que varios
-// navegadores ejecuten el mismo scraping
-// simultáneamente.
 let sincronizacionPanelEnCurso = null;
+
+function normalizarTexto(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function limpiarTexto(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/[✅⚠️🔗]/g, "")
+    .trim();
+}
+
+function convertirSiNo(value) {
+  const texto = normalizarTexto(limpiarTexto(value));
+
+  if (["si", "yes", "true", "1"].includes(texto)) return true;
+  if (["no", "false", "0"].includes(texto)) return false;
+  if (/^si\b/.test(texto)) return true;
+  if (/^no\b/.test(texto)) return false;
+
+  return null;
+}
+
+function detectarRol(usuario) {
+  return String(usuario?.tipo_doc || "").toUpperCase().trim() === "NIT"
+    ? "administrador"
+    : "empresa";
+}
 
 function crearCliente() {
   const jar = new CookieJar();
@@ -52,64 +74,24 @@ function crearCliente() {
       jar,
       withCredentials: true,
       timeout: 25000,
+      maxRedirects: 5,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
       },
     })
   );
 }
 
-function limpiarTexto(valor) {
-  return String(valor || "")
-    .replace(/\s+/g, " ")
-    .replace("✅", "")
-    .replace("⚠️", "")
-    .replace("🔗", "")
-    .trim();
-}
-
-function convertirSiNo(valor) {
-  const texto = limpiarTexto(valor).toLowerCase();
-
-  if (texto.includes("sí") || texto.includes("si")) return true;
-  if (texto.includes("no")) return false;
-
-  return null;
-}
-
-function detectarRol(usuario) {
-  const tipoDoc = String(usuario.tipo_doc || "").toUpperCase();
-  const paso = String(usuario.paso || "").trim();
-  const tieneCertificado = Boolean(usuario.certificado_url);
-  const completado = usuario.completado === true;
-
-  /*
-    Regla inicial:
-    - Si el tipo documento es NIT, lo contamos como usuario administrador / empresa.
-    - Si NO es NIT, lo contamos como usuario de empresa / estudiante.
-  */
-
-  if (tipoDoc === "NIT") {
-    return "administrador";
-  }
-
-  return "empresa";
-}
-
 async function loginAdmin(client) {
   const loginPage = await client.get(ADMIN_LOGIN_PATH);
   const $ = cheerio.load(loginPage.data);
-
   const payload = {};
 
   $("form input").each((_, input) => {
     const name = $(input).attr("name");
-    const value = $(input).attr("value") || "";
-
-    if (name) {
-      payload[name] = value;
-    }
+    if (name) payload[name] = $(input).attr("value") || "";
   });
 
   payload[ADMIN_USER_FIELD] = ADMIN_USERNAME;
@@ -117,312 +99,251 @@ async function loginAdmin(client) {
 
   const form = $("form").first();
   const action = form.attr("action") || ADMIN_LOGIN_PATH;
+  const response = await client.post(
+    action,
+    new URLSearchParams(payload).toString(),
+    {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Referer: `${ADMIN_BASE_URL}${ADMIN_LOGIN_PATH}`,
+      },
+    }
+  );
 
-  await client.post(action, new URLSearchParams(payload).toString(), {
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Referer: `${ADMIN_BASE_URL}${ADMIN_LOGIN_PATH}`,
-    },
-    maxRedirects: 5,
-  });
+  const finalUrl = String(response?.request?.res?.responseUrl || "");
+  if (finalUrl && normalizarTexto(finalUrl).includes(normalizarTexto(ADMIN_LOGIN_PATH))) {
+    throw new Error("El panel administrativo no aceptó las credenciales");
+  }
 }
 
-function normalizarUrlCertificado(valor) {
-  const raw = String(valor || "").trim();
-
-  if (!raw) {
-    return null;
-  }
+function normalizarUrlCertificado(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
 
   try {
     const url = new URL(raw, ADMIN_BASE_URL);
-
-    if (
-      url.protocol !== "http:" &&
-      url.protocol !== "https:"
-    ) {
-      return null;
-    }
-
+    if (!["http:", "https:"].includes(url.protocol)) return "";
     return url.href;
   } catch {
-    return null;
+    return "";
   }
+}
+
+function crearMapaEncabezados($) {
+  const mapa = new Map();
+
+  $("#usersTable thead th").each((index, th) => {
+    mapa.set(normalizarTexto($(th).text()), index);
+  });
+
+  return mapa;
+}
+
+function buscarIndiceEncabezado(mapa, candidatos, fallback = -1) {
+  for (const [encabezado, index] of mapa.entries()) {
+    if (candidatos.some((candidato) => encabezado.includes(candidato))) {
+      return index;
+    }
+  }
+
+  return fallback;
 }
 
 function extraerUsuariosDesdeHtml(html) {
   const $ = cheerio.load(html);
+  const mapa = crearMapaEncabezados($);
+
+  const idx = {
+    id: buscarIndiceEncabezado(mapa, ["id"], 0),
+    usuario: buscarIndiceEncabezado(mapa, ["usuario"], 1),
+    documento: buscarIndiceEncabezado(mapa, ["documento"], 2),
+    tipoDoc: buscarIndiceEncabezado(mapa, ["tipo doc", "tipo documento"], 3),
+    empresa: buscarIndiceEncabezado(mapa, ["empresa"], 4),
+    facturado: buscarIndiceEncabezado(mapa, ["facturado"], 5),
+    primerIngreso: buscarIndiceEncabezado(mapa, ["primer ingreso"], 6),
+    ultimoIngreso: buscarIndiceEncabezado(mapa, ["ultimo ingreso"], 7),
+    certificado: buscarIndiceEncabezado(mapa, ["certificado"], 8),
+    completado: buscarIndiceEncabezado(mapa, ["completado"], 9),
+  };
+
   const usuarios = [];
 
   $("#usersTable tbody tr").each((_, row) => {
-  const cells = $(row).find("td");
+    const cells = $(row).find("td");
+    if (!cells.length) return;
 
-  if (!cells || cells.length < 12) return;
+    const textAt = (index) => {
+      if (index < 0 || index >= cells.length) return "";
+      return limpiarTexto($(cells[index]).text());
+    };
 
-  const certificadoHref =
-    $(cells[10]).find("a").attr("href") || "";
+    const linkAt = (index) => {
+      if (index < 0 || index >= cells.length) return "";
+      return $(cells[index]).find("a").first().attr("href") || "";
+    };
 
-  const certificadoUrl =
-    normalizarUrlCertificado(certificadoHref);
+    const usuario = {
+      id: textAt(idx.id),
+      usuario: textAt(idx.usuario),
+      documento: textAt(idx.documento),
+      tipo_doc: textAt(idx.tipoDoc),
+      empresa: textAt(idx.empresa),
+      facturado: convertirSiNo(textAt(idx.facturado)),
+      primer_ingreso: textAt(idx.primerIngreso),
+      ultimo_ingreso: textAt(idx.ultimoIngreso),
+      certificado_url: normalizarUrlCertificado(linkAt(idx.certificado)),
+      completado: convertirSiNo(textAt(idx.completado)),
+    };
 
-  const usuario = {
-    id: limpiarTexto($(cells[0]).text()),
-    usuario: limpiarTexto($(cells[1]).text()),
-    documento: limpiarTexto($(cells[2]).text()),
-    tipo_doc: limpiarTexto($(cells[3]).text()),
-    empresa: limpiarTexto($(cells[4]).text()),
-    facturado: convertirSiNo($(cells[5]).text()),
-    primer_ingreso: limpiarTexto($(cells[6]).text()),
-    ultimo_ingreso: limpiarTexto($(cells[7]).text()),
-    celular: limpiarTexto($(cells[8]).text()),
-    paso: limpiarTexto($(cells[9]).text()),
-    certificado_url: certificadoUrl,
-    completado: convertirSiNo($(cells[11]).text()),
-    habilitado: limpiarTexto($(cells[12]).text())
-      .toLowerCase()
-      .includes("activo"),
-  };
+    if (!usuario.documento && !usuario.usuario) return;
 
-  usuario.rol_detectado = detectarRol(usuario);
-
-  usuarios.push(usuario);
-});
+    usuario.rol_detectado = detectarRol(usuario);
+    usuarios.push(usuario);
+  });
 
   return usuarios;
 }
 
 function calcularMetricas(usuarios) {
-  const empresasSet = new Set();
-
-  usuarios.forEach((u) => {
-    if (u.empresa) {
-      empresasSet.add(u.empresa.trim().toUpperCase());
-    }
-  });
-
-  const certificadosEmitidos = usuarios.filter((u) => {
-    return u.certificado_url || u.completado === true;
-  }).length;
-
-  const totalFacturados = usuarios.filter((u) => u.facturado === true).length;
-  const totalNoFacturados = usuarios.filter((u) => u.facturado === false).length;
-
-  const totalUsuarios = usuarios.length;
-
-  const totalUsuariosEmpresa = usuarios.filter((u) => {
-    return u.rol_detectado === "empresa";
-  }).length;
-
-  const totalUsuariosAdministradores = usuarios.filter((u) => {
-    return u.rol_detectado === "administrador";
-  }).length;
-
-  const empresasActivas = empresasSet.size;
+  const lista = Array.isArray(usuarios) ? usuarios : [];
+  const empresas = new Set(
+    lista
+      .map((u) => String(u.empresa || "").trim().toUpperCase())
+      .filter(Boolean)
+  );
 
   return {
-    certificados_emitidos: certificadosEmitidos,
-    empresas_activas: empresasActivas,
-    total_facturados: totalFacturados,
-    total_no_facturados: totalNoFacturados,
-    total_usuarios: totalUsuarios,
-    total_usuarios_empresa: totalUsuariosEmpresa,
-    total_usuarios_administradores: totalUsuariosAdministradores,
+    certificados_emitidos: lista.filter(
+      (u) => Boolean(u.certificado_url) || u.completado === true
+    ).length,
+    empresas_activas: empresas.size,
+    total_facturados: lista.filter((u) => u.facturado === true).length,
+    total_no_facturados: lista.filter((u) => u.facturado === false).length,
+    total_usuarios: lista.length,
+    total_usuarios_empresa: lista.filter(
+      (u) => u.rol_detectado === "empresa"
+    ).length,
+    total_usuarios_administradores: lista.filter(
+      (u) => u.rol_detectado === "administrador"
+    ).length,
   };
 }
 
-// ─────────────────────────────────────────────
-// SINCRONIZACIÓN CONTROLADA DEL PANEL
-// ─────────────────────────────────────────────
-
 async function sincronizarPanelCertificados() {
-  // Si ya existe una sincronización en curso,
-  // todos los requests esperan la misma Promise.
-  if (sincronizacionPanelEnCurso) {
-    console.log(
-      "⏳ Sincronización de certificados ya en curso — reutilizando proceso"
-    );
+  if (sincronizacionPanelEnCurso) return sincronizacionPanelEnCurso;
 
-    return sincronizacionPanelEnCurso;
-  }
+  sincronizacionPanelEnCurso = (async () => {
+    console.log("🔄 Sincronizando panel administrativo de certificados...");
 
+    const client = crearCliente();
+    await loginAdmin(client);
 
-  sincronizacionPanelEnCurso =
-    (async () => {
-      console.log(
-        "🔄 Sincronizando panel administrativo de certificados..."
-      );
+    const response = await client.get(ADMIN_PANEL_PATH);
+    const usuarios = extraerUsuariosDesdeHtml(response.data);
+    const metricas = calcularMetricas(usuarios);
 
+    panelCache = {
+      usuarios,
+      metricas,
+      actualizadoEn: Date.now(),
+    };
 
-      const client =
-        crearCliente();
+    console.log(`✅ Panel certificados sincronizado: ${usuarios.length} usuarios`);
 
-
-      await loginAdmin(
-        client
-      );
-
-
-      const response =
-        await client.get(
-          ADMIN_PANEL_PATH
-        );
-
-
-      const usuarios =
-        extraerUsuariosDesdeHtml(
-          response.data
-        );
-
-
-      const metricas =
-        calcularMetricas(
-          usuarios
-        );
-
-
-      panelCache = {
-        usuarios,
-        metricas,
-        actualizadoEn:
-          Date.now(),
-      };
-
-
-      console.log(
-        `✅ Panel certificados sincronizado: ${usuarios.length} usuarios`
-      );
-
-
-      return {
-        usuarios,
-        metricas,
-        actualizadoEn:
-          panelCache.actualizadoEn,
-
-        stale:
-          false,
-      };
-    })();
-
+    return {
+      usuarios,
+      metricas,
+      actualizadoEn: panelCache.actualizadoEn,
+      stale: false,
+    };
+  })();
 
   try {
     return await sincronizacionPanelEnCurso;
   } finally {
-    sincronizacionPanelEnCurso =
-      null;
+    sincronizacionPanelEnCurso = null;
   }
 }
 
-
-/**
- * Devuelve la caché vigente.
- *
- * Si está vencida:
- * intenta sincronizar.
- *
- * Si la plataforma externa falla pero existe
- * una caché anterior, devuelve los últimos
- * datos conocidos.
- */
 async function obtenerPanelCacheado() {
-  const ahora =
-    Date.now();
-
-
-  const tieneCache =
-    panelCache.actualizadoEn > 0;
-
-
+  const ahora = Date.now();
+  const tieneCache = panelCache.actualizadoEn > 0;
   const cacheVigente =
-    tieneCache &&
-    ahora - panelCache.actualizadoEn <
-      PANEL_CACHE_TTL_MS;
-
+    tieneCache && ahora - panelCache.actualizadoEn < PANEL_CACHE_TTL_MS;
 
   if (cacheVigente) {
     return {
-      usuarios:
-        panelCache.usuarios,
-
-      metricas:
-        panelCache.metricas,
-
-      actualizadoEn:
-        panelCache.actualizadoEn,
-
-      stale:
-        false,
+      usuarios: panelCache.usuarios,
+      metricas: panelCache.metricas,
+      actualizadoEn: panelCache.actualizadoEn,
+      stale: false,
     };
   }
-
 
   try {
     return await sincronizarPanelCertificados();
   } catch (error) {
-    // La plataforma externa falló, pero tenemos
-    // una copia anterior disponible.
     if (tieneCache) {
       console.warn(
-        "⚠️ Falló sincronización externa — usando caché anterior:",
+        "⚠️ Falló sincronización externa; usando caché anterior:",
         error.message
       );
 
-
       return {
-        usuarios:
-          panelCache.usuarios,
-
-        metricas:
-          panelCache.metricas,
-
-        actualizadoEn:
-          panelCache.actualizadoEn,
-
-        stale:
-          true,
+        usuarios: panelCache.usuarios,
+        metricas: panelCache.metricas,
+        actualizadoEn: panelCache.actualizadoEn,
+        stale: true,
       };
     }
-
 
     throw error;
   }
 }
 
-function normalizarTexto(value) {
-  return String(value || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
+function extraerEmpresasSolicitadas(value) {
+  const valores = Array.isArray(value) ? value : [value];
+  const empresas = [];
+
+  valores.forEach((item) => {
+    String(item || "")
+      .split(/[\n,;|]+/)
+      .map((parte) => normalizarTexto(parte))
+      .filter((parte) => parte.length >= 2)
+      .forEach((parte) => empresas.push(parte));
+  });
+
+  return [...new Set(empresas)].slice(0, 50);
 }
 
-function esAdminEmpresa(usuario) {
-  const tipoDoc = String(usuario.tipo_doc || "").toUpperCase().trim();
-  const rol = String(usuario.rol_detectado || "").toLowerCase().trim();
+function obtenerFiltroFacturado(value) {
+  const texto = normalizarTexto(value);
 
-  return tipoDoc === "NIT" || rol === "administrador";
+  if (["si", "yes", "true", "1"].includes(texto)) return true;
+  if (["no", "false", "0"].includes(texto)) return false;
+
+  return null;
 }
 
 function parseFechaPanel(value) {
   if (!value || value === "—") return null;
 
-  const texto = String(value).trim();
-
-  const match = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+  const match = String(value)
+    .trim()
+    .match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
 
   if (!match) return null;
 
-  const day = Number(match[1]);
-  const month = Number(match[2]) - 1;
-  const year = Number(match[3]);
-  const hour = Number(match[4] || 0);
-  const minute = Number(match[5] || 0);
+  const date = new Date(
+    Number(match[3]),
+    Number(match[2]) - 1,
+    Number(match[1]),
+    Number(match[4] || 0),
+    Number(match[5] || 0),
+    0
+  );
 
-  const date = new Date(year, month, day, hour, minute, 0);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  return date;
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function inicioDia(date) {
@@ -437,40 +358,18 @@ function finDia(date) {
   return d;
 }
 
-function obtenerRangoFecha(query) {
-  const range = query.range || "all";
-
+function obtenerRangoFecha(query = {}) {
+  const range = String(query.range || "all");
   const hoy = new Date();
-  const hoyInicio = inicioDia(hoy);
   const hoyFin = finDia(hoy);
 
   if (range === "all") return null;
+  if (range === "today") return { desde: inicioDia(hoy), hasta: hoyFin };
 
-  if (range === "today") {
-    return {
-      desde: hoyInicio,
-      hasta: hoyFin,
-    };
-  }
-
-  if (range === "7d") {
+  if (range === "7d" || range === "30d") {
     const desde = inicioDia(hoy);
-    desde.setDate(desde.getDate() - 6);
-
-    return {
-      desde,
-      hasta: hoyFin,
-    };
-  }
-
-  if (range === "30d") {
-    const desde = inicioDia(hoy);
-    desde.setDate(desde.getDate() - 29);
-
-    return {
-      desde,
-      hasta: hoyFin,
-    };
+    desde.setDate(desde.getDate() - (range === "7d" ? 6 : 29));
+    return { desde, hasta: hoyFin };
   }
 
   if (range === "custom") {
@@ -487,10 +386,7 @@ function obtenerRangoFecha(query) {
       hasta = finDia(new Date(year, month - 1, day));
     }
 
-    return {
-      desde,
-      hasta,
-    };
+    return { desde, hasta };
   }
 
   return null;
@@ -499,17 +395,156 @@ function obtenerRangoFecha(query) {
 function cumpleRangoFecha(usuario, rango) {
   if (!rango) return true;
 
-  const fechaUltimo = parseFechaPanel(usuario.ultimo_ingreso);
-  const fechaPrimer = parseFechaPanel(usuario.primer_ingreso);
-
-  const fecha = fechaUltimo || fechaPrimer;
+  const fecha =
+    parseFechaPanel(usuario.ultimo_ingreso) ||
+    parseFechaPanel(usuario.primer_ingreso);
 
   if (!fecha) return false;
-
   if (rango.desde && fecha < rango.desde) return false;
   if (rango.hasta && fecha > rango.hasta) return false;
 
   return true;
+}
+
+function esAdminEmpresa(usuario) {
+  return String(usuario?.tipo_doc || "").toUpperCase().trim() === "NIT" ||
+    String(usuario?.rol_detectado || "").toLowerCase().trim() === "administrador";
+}
+
+function filtrarUsuarios(usuarios, query = {}) {
+  const empresasSolicitadas = extraerEmpresasSolicitadas(
+    query.q || query.empresas || ""
+  );
+  const filtroFacturado = obtenerFiltroFacturado(query.facturado);
+  const rango = obtenerRangoFecha(query);
+
+  if (!empresasSolicitadas.length) return [];
+
+  return (usuarios || []).filter((usuario) => {
+    if (esAdminEmpresa(usuario)) return false;
+
+    const empresa = normalizarTexto(usuario.empresa);
+    const coincideEmpresa = empresasSolicitadas.some((busqueda) =>
+      empresa.includes(busqueda)
+    );
+
+    if (!coincideEmpresa || !cumpleRangoFecha(usuario, rango)) return false;
+    if (filtroFacturado === true && usuario.facturado !== true) return false;
+    if (filtroFacturado === false && usuario.facturado !== false) return false;
+
+    return true;
+  });
+}
+
+function extraerValorInputPorLabel($, labelTexto) {
+  let valor = "";
+  const buscado = normalizarTexto(labelTexto);
+
+  $("label").each((_, label) => {
+    if (valor) return;
+
+    const texto = normalizarTexto($(label).text());
+    if (!texto.includes(buscado)) return;
+
+    const forId = $(label).attr("for");
+    let input = forId ? $(`#${forId}`) : null;
+
+    if (!input || !input.length) {
+      input = $(label).closest("div").find("input, select, textarea").first();
+    }
+
+    if (input && input.length) valor = input.val() || "";
+  });
+
+  return String(valor || "").trim();
+}
+
+function extraerNombreCompletoDesdeEditHtml(html) {
+  const $ = cheerio.load(html);
+  const porLabel = extraerValorInputPorLabel($, "Nombre Completo");
+  if (porLabel) return porLabel;
+
+  const selectores = [
+    'input[name="nombre_completo"]',
+    'input[name="nombre"]',
+    'input[name="full_name"]',
+    '#nombre_completo',
+    '#nombre',
+    '#full_name',
+  ];
+
+  for (const selector of selectores) {
+    const value = $(selector).val();
+    if (value) return String(value).trim();
+  }
+
+  return "";
+}
+
+async function enriquecerUsuariosConNombre(usuarios) {
+  const resultado = new Array(usuarios.length);
+  const faltantes = [];
+
+  for (let index = 0; index < usuarios.length; index += 1) {
+    const usuario = usuarios[index];
+    const id = String(usuario.id || "").trim();
+    const nombreCache = id ? await getCachedName(id) : null;
+
+    if (nombreCache) {
+      resultado[index] = { ...usuario, nombre: nombreCache };
+    } else {
+      faltantes.push({ index, usuario });
+    }
+  }
+
+  if (!faltantes.length) return resultado;
+
+  const client = crearCliente();
+  await loginAdmin(client);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < faltantes.length) {
+      const posicion = cursor;
+      cursor += 1;
+
+      const { index, usuario } = faltantes[posicion];
+      const id = String(usuario.id || "").trim();
+      let nombre = usuario.usuario || usuario.documento || "";
+
+      if (id) {
+        try {
+          const response = await client.get(`/admin/edit/${encodeURIComponent(id)}`);
+          nombre = extraerNombreCompletoDesdeEditHtml(response.data) || nombre;
+
+          if (nombre) {
+            await saveCachedName({
+              id,
+              documento: usuario.documento,
+              nombre,
+              empresa: usuario.empresa,
+            });
+          }
+        } catch (error) {
+          console.warn(
+            `⚠️ No se pudo enriquecer nombre del usuario ID ${id}:`,
+            error.message
+          );
+        }
+      }
+
+      resultado[index] = { ...usuario, nombre };
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(NOMBRE_CONCURRENCIA, faltantes.length) },
+      () => worker()
+    )
+  );
+
+  return resultado;
 }
 
 function limpiarUsuarioParaFrontend(usuario) {
@@ -519,291 +554,100 @@ function limpiarUsuarioParaFrontend(usuario) {
     usuario: usuario.usuario || "",
     documento: usuario.documento || "",
     empresa: usuario.empresa || "",
-    primer_ingreso: usuario.primer_ingreso === "—" ? "" : usuario.primer_ingreso || "",
-    ultimo_ingreso: usuario.ultimo_ingreso === "—" ? "" : usuario.ultimo_ingreso || "",
+    facturado:
+      usuario.facturado === true
+        ? true
+        : usuario.facturado === false
+          ? false
+          : null,
+    primer_ingreso:
+      usuario.primer_ingreso === "—" ? "" : usuario.primer_ingreso || "",
+    ultimo_ingreso:
+      usuario.ultimo_ingreso === "—" ? "" : usuario.ultimo_ingreso || "",
     completado: usuario.completado === true,
     certificado_url: usuario.certificado_url || "",
-    facturado: usuario.facturado === true,
   };
 }
 
-router.get("/", async (req, res) => {
+function validarConfiguracionAdmin(res) {
+  if (ADMIN_BASE_URL && ADMIN_USERNAME && ADMIN_PASSWORD) return true;
+
+  res.status(500).json({
+    ok: false,
+    error:
+      "Faltan variables ADMIN_BASE_URL, ADMIN_USERNAME o ADMIN_PASSWORD en Render.",
+  });
+  return false;
+}
+
+router.get("/", async (_req, res) => {
   try {
-    if (
-      !ADMIN_BASE_URL ||
-      !ADMIN_USERNAME ||
-      !ADMIN_PASSWORD
-    ) {
-      return res
-        .status(500)
-        .json({
-          ok: false,
+    if (!validarConfiguracionAdmin(res)) return;
 
-          error:
-            "Faltan variables ADMIN_BASE_URL, ADMIN_USERNAME o ADMIN_PASSWORD en Render.",
-        });
-    }
-
-
-    const resultado =
-      await obtenerPanelCacheado();
-
+    const resultado = await obtenerPanelCacheado();
 
     return res.json({
-      ok:
-        true,
-
-      total:
-        resultado.usuarios.length,
-
-      metricas:
-        resultado.metricas,
-
-      actualizado_en:
-        new Date(
-          resultado.actualizadoEn
-        ).toISOString(),
-
-      cache_desactualizada:
-        resultado.stale,
+      ok: true,
+      total: resultado.usuarios.length,
+      metricas: resultado.metricas,
+      actualizado_en: new Date(resultado.actualizadoEn).toISOString(),
+      cache_desactualizada: resultado.stale,
     });
   } catch (error) {
-    console.error(
-      "❌ Error leyendo panel admin certificados:",
-      error.message
-    );
-
-
-    return res
-      .status(500)
-      .json({
-        ok:
-          false,
-
-        error:
-          "No se pudo leer la información del panel admin.",
-
-        detail:
-          error.message,
-      });
+    console.error("❌ Error leyendo panel admin certificados:", error.message);
+    return res.status(500).json({
+      ok: false,
+      error: "No se pudo leer la información del panel admin.",
+    });
   }
 });
 
-function extraerValorInputPorLabel($, labelTexto) {
-  let valor = "";
-
-  $("label").each((_, label) => {
-    const texto = normalizarTexto($(label).text());
-
-    if (texto.includes(normalizarTexto(labelTexto))) {
-      const contenedor = $(label).closest("div");
-      const input = contenedor.find("input, select, textarea").first();
-
-      if (input && input.length) {
-        valor = input.val() || "";
-      }
-    }
-  });
-
-  return String(valor || "").trim();
-}
-
-function extraerNombreCompletoDesdeEditHtml(html) {
-  const $ = cheerio.load(html);
-
-  let nombre = extraerValorInputPorLabel($, "Nombre Completo");
-
-  if (nombre) return nombre;
-
-  const posiblesSelectores = [
-    'input[name="nombre_completo"]',
-    'input[name="nombre"]',
-    'input[name="full_name"]',
-    'input[id="nombre_completo"]',
-    'input[id="nombre"]',
-    'input[id="full_name"]',
-  ];
-
-  for (const selector of posiblesSelectores) {
-    const value = $(selector).val();
-
-    if (value) {
-      return String(value).trim();
-    }
-  }
-
-  return "";
-}
-
-const nombresCache = new Map();
-
-async function obtenerNombreCompletoUsuario(client, usuario) {
-  const id = String(usuario.id || "").trim();
-
-  if (!id) {
-    return usuario.usuario || "";
-  }
-
-  const nombreCache = await getCachedName(id);
-
-  if (nombreCache) {
-    return nombreCache;
-  }
-
+async function responderConsultaEmpresa(req, res) {
   try {
-    const response = await client.get(`/admin/edit/${id}`);
-    const nombre = extraerNombreCompletoDesdeEditHtml(response.data);
+    if (!validarConfiguracionAdmin(res)) return;
 
-    const nombreFinal = nombre || usuario.usuario || "";
+    const empresasSolicitadas = extraerEmpresasSolicitadas(req.query.q || "");
 
-    if (nombreFinal) {
-      await saveCachedName({
-        id,
-        documento: usuario.documento,
-        nombre: nombreFinal,
-        empresa: usuario.empresa,
-      });
-    }
-
-    return nombreFinal;
-  } catch (error) {
-    console.warn(
-      `⚠️ No se pudo leer nombre completo del usuario ID ${id}:`,
-      error.message
-    );
-
-    return usuario.usuario || "";
-  }
-}
-
-async function enriquecerUsuariosConNombre(
-  usuarios
-) {
-  const resultado = [];
-
-  let client = null;
-  let clienteAutenticado = false;
-
-
-  for (const usuario of usuarios) {
-    const id =
-      String(
-        usuario.id || ""
-      )
-        .trim();
-
-
-    // Primero revisar caché persistente.
-    const nombreCache =
-      id
-        ? await getCachedName(id)
-        : null;
-
-
-    if (nombreCache) {
-      resultado.push({
-        ...usuario,
-        nombre:
-          nombreCache,
-      });
-
-      continue;
-    }
-
-
-    // Solo hacer login cuando realmente
-    // encontremos un nombre faltante.
-    if (!client) {
-      client =
-        crearCliente();
-    }
-
-
-    if (!clienteAutenticado) {
-      await loginAdmin(
-        client
-      );
-
-      clienteAutenticado =
-        true;
-    }
-
-
-    const nombreCompleto =
-      await obtenerNombreCompletoUsuario(
-        client,
-        usuario
-      );
-
-
-    resultado.push({
-      ...usuario,
-      nombre:
-        nombreCompleto,
-    });
-  }
-
-
-  return resultado;
-}
-
-router.get("/empresa", async (req, res) => {
-  try {
-    if (!ADMIN_BASE_URL || !ADMIN_USERNAME || !ADMIN_PASSWORD) {
-      return res.status(500).json({
-        ok: false,
-        error:
-          "Faltan variables ADMIN_BASE_URL, ADMIN_USERNAME o ADMIN_PASSWORD en Render.",
-      });
-    }
-
-    const q = normalizarTexto(req.query.q || "");
-
-    if (!q || q.length < 3) {
+    if (!empresasSolicitadas.length) {
       return res.json({
         ok: true,
         total: 0,
         usuarios: [],
+        empresas_consultadas: [],
       });
     }
 
-   const resultadoCache =
-  await obtenerPanelCacheado();
-const usuarios =
-  resultadoCache.usuarios;
-    const rango = obtenerRangoFecha(req.query);
+    const resultadoCache = await obtenerPanelCacheado();
+    const filtradosBase = filtrarUsuarios(resultadoCache.usuarios, req.query || {});
+    const filtradosConNombre = await enriquecerUsuariosConNombre(filtradosBase);
+    const usuarios = filtradosConNombre.map(limpiarUsuarioParaFrontend);
 
-    const filtradosBase = usuarios.filter((u) => {
-  if (esAdminEmpresa(u)) return false;
-
-  const empresa = normalizarTexto(u.empresa);
-  const coincideEmpresa = empresa.includes(q);
-  const cumpleFecha = cumpleRangoFecha(u, rango);
-
-  return coincideEmpresa && cumpleFecha;
-});
-
-const filtradosConNombre =
-  await enriquecerUsuariosConNombre(
-    filtradosBase
-  );
-
-const filtrados = filtradosConNombre.map(limpiarUsuarioParaFrontend);
-
-return res.json({
-  ok: true,
-  total: filtrados.length,
-  usuarios: filtrados,
-});
+    return res.json({
+      ok: true,
+      total: usuarios.length,
+      usuarios,
+      empresas_consultadas: empresasSolicitadas,
+      facturado_filtro: normalizarTexto(req.query.facturado || "all"),
+      actualizado_en: new Date(resultadoCache.actualizadoEn).toISOString(),
+      cache_desactualizada: resultadoCache.stale,
+    });
   } catch (error) {
     console.error("❌ Error buscando usuarios por empresa:", error.message);
-
     return res.status(500).json({
       ok: false,
       error: "No se pudo buscar la empresa.",
-      detail: error.message,
     });
   }
-});
+}
+
+router.get("/empresa", responderConsultaEmpresa);
 
 module.exports = router;
+module.exports._test = {
+  convertirSiNo,
+  extraerUsuariosDesdeHtml,
+  extraerEmpresasSolicitadas,
+  obtenerFiltroFacturado,
+  filtrarUsuarios,
+  calcularMetricas,
+};
