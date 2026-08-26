@@ -3,13 +3,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const adminFacturacionRouter = require("../src/routes/adminFacturacion");
+const adminCertificadosRouter = require("../src/routes/adminCertificados");
 const {
   extraerUsuariosDesdeHtml,
   extraerEmpresasSolicitadas,
   obtenerFiltroFacturado,
   filtrarUsuarios,
-} = adminFacturacionRouter._test;
+  calcularMetricas,
+} = adminCertificadosRouter._test;
 
 const htmlPanelActual = `
 <table id="usersTable">
@@ -56,7 +57,7 @@ const htmlPanelActual = `
   </tbody>
 </table>`;
 
-test("lee la columna FACTURADO del panel actual por encabezado", () => {
+test("lee FACTURADO y COMPLETADO por encabezado en el panel actual", () => {
   const users = extraerUsuariosDesdeHtml(htmlPanelActual);
 
   assert.equal(users.length, 4);
@@ -65,20 +66,24 @@ test("lee la columna FACTURADO del panel actual por encabezado", () => {
   assert.equal(users[1].facturado, false);
   assert.equal(users[2].facturado, true);
   assert.equal(users[0].completado, true);
+  assert.equal(users[3].rol_detectado, "administrador");
 });
 
-test("acepta varias empresas separadas por coma", () => {
-  const empresas = extraerEmpresasSolicitadas(
-    "LIVING NATURAL, TEMPORARY PROFESSIONAL SERVICES SAS"
+test("acepta varias empresas separadas por distintos delimitadores", () => {
+  assert.deepEqual(
+    extraerEmpresasSolicitadas(
+      "LIVING NATURAL, TEMPORARY PROFESSIONAL SERVICES SAS; AXIONLOG\nOTRA EMPRESA"
+    ),
+    [
+      "living natural",
+      "temporary professional services sas",
+      "axionlog",
+      "otra empresa",
+    ]
   );
-
-  assert.deepEqual(empresas, [
-    "living natural",
-    "temporary professional services sas",
-  ]);
 });
 
-test("filtra solo no facturados de varias empresas y excluye administradores NIT", () => {
+test("filtra no facturados de varias empresas y excluye administradores NIT", () => {
   const users = extraerUsuariosDesdeHtml(htmlPanelActual);
 
   const filtrados = filtrarUsuarios(users, {
@@ -97,4 +102,15 @@ test("interpreta correctamente los filtros Sí, No y Todo", () => {
   assert.equal(obtenerFiltroFacturado("Sí"), true);
   assert.equal(obtenerFiltroFacturado("No"), false);
   assert.equal(obtenerFiltroFacturado("all"), null);
+});
+
+test("calcula métricas generales con el mismo parser del filtro", () => {
+  const users = extraerUsuariosDesdeHtml(htmlPanelActual);
+  const metricas = calcularMetricas(users);
+
+  assert.equal(metricas.total_usuarios, 4);
+  assert.equal(metricas.total_facturados, 1);
+  assert.equal(metricas.total_no_facturados, 3);
+  assert.equal(metricas.total_usuarios_empresa, 3);
+  assert.equal(metricas.total_usuarios_administradores, 1);
 });
