@@ -417,6 +417,9 @@ function filtrarUsuarios(usuarios, query = {}) {
   );
   const filtroFacturado = obtenerFiltroFacturado(query.facturado);
   const rango = obtenerRangoFecha(query);
+  const todasLasEmpresas = empresasSolicitadas.some((empresa) =>
+    ["todos", "todas", "all"].includes(empresa)
+  );
 
   if (!empresasSolicitadas.length) return [];
 
@@ -424,9 +427,9 @@ function filtrarUsuarios(usuarios, query = {}) {
     if (esAdminEmpresa(usuario)) return false;
 
     const empresa = normalizarTexto(usuario.empresa);
-    const coincideEmpresa = empresasSolicitadas.some((busqueda) =>
-      empresa.includes(busqueda)
-    );
+    const coincideEmpresa = todasLasEmpresas
+      ? Boolean(empresa)
+      : empresasSolicitadas.some((busqueda) => empresa.includes(busqueda));
 
     if (!coincideEmpresa || !cumpleRangoFecha(usuario, rango)) return false;
     if (filtroFacturado === true && usuario.facturado !== true) return false;
