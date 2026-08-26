@@ -12,6 +12,9 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/google-chrome
 
     steps:
       - name: Checkout
@@ -23,8 +26,11 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Instalar dependencias y sincronizar lockfile
-        run: npm install
+      - name: Sincronizar package-lock sin descargar Chrome
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Instalar dependencias sin postinstall
+        run: npm install --ignore-scripts
 
       - name: Validar sintaxis
         run: npm run check
@@ -38,4 +44,4 @@ jobs:
         with:
           name: package-lock-generated
           path: package-lock.json
-          if-no-files-found: ignore
+          if-no-files-found: error
