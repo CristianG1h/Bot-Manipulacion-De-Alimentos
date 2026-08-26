@@ -140,3 +140,30 @@ test("calcula métricas generales con el mismo parser del filtro", () => {
   assert.equal(metricas.total_usuarios_empresa, 3);
   assert.equal(metricas.total_usuarios_administradores, 1);
 });
+
+
+test("TODOS consulta todas las empresas y conserva los filtros", () => {
+  const users = extraerUsuariosDesdeHtml(htmlPanelActual);
+
+  const todos = filtrarUsuarios(users, {
+    q: "TODOS",
+    facturado: "all",
+    range: "all",
+  });
+
+  assert.deepEqual(
+    todos.map((u) => u.documento),
+    ["100000001", "100000002", "100000003"]
+  );
+
+  const noFacturados = filtrarUsuarios(users, {
+    q: "TODOS",
+    facturado: "no",
+    range: "all",
+  });
+
+  assert.deepEqual(
+    noFacturados.map((u) => u.documento),
+    ["100000001", "100000002"]
+  );
+});
