@@ -8,11 +8,8 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: write
-
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,14 +29,11 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Sincronizar package-lock sin descargar Chrome
+      - name: Sincronizar package-lock
         run: npm install --package-lock-only --ignore-scripts
 
-      - name: Instalar dependencias sin postinstall
+      - name: Instalar dependencias
         run: npm install --ignore-scripts
-
-      - name: Aplicar correcciones de seguridad compatibles
-        run: npm audit fix --ignore-scripts
 
       - name: Verificar vulnerabilidades altas
         run: npm audit --audit-level=high
@@ -62,20 +56,7 @@ jobs:
       - name: Ejecutar pruebas
         run: npm test
 
-      - name: Guardar package-lock sincronizado en la rama
-        if: github.event_name == 'push' && github.ref == 'refs/heads/audit/cleanup-dashboard-20260826'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          if git diff --cached --quiet; then
-            echo "package-lock.json ya está sincronizado"
-          else
-            git commit -m "chore: sincronizar package-lock y parches de seguridad"
-            git push
-          fi
-
-      - name: Publicar lockfile generado
+      - name: Publicar lockfile validado
         if: always()
         uses: actions/upload-artifact@v4
         with:
