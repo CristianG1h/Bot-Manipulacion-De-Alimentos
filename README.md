@@ -248,7 +248,7 @@ Se incluye `.env.example` con el inventario operativo sin secretos. Las credenci
 
 Grupos principales:
 
-- WhatsApp: `TOKEN`, `PHONE_NUMBER_ID`, `GRAPH_VERSION`;
+- WhatsApp: `WHATSAPP_TOKEN`, `PHONE_NUMBER_ID`, `GRAPH_VERSION`;
 - dashboard: `DASHBOARD_USER`, `DASHBOARD_PASS`;
 - Chatwoot: `CHATWOOT_BASE_URL`, `CHATWOOT_ACCOUNT_ID`, `CHATWOOT_INBOX_ID`, `CHATWOOT_API_TOKEN`, `CHATWOOT_WEBHOOK_TOKEN`;
 - notificaciones: `API_KEY_NOTIFY`;
